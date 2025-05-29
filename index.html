@@ -6,11 +6,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>📦 Quét QR - Lưu Trữ Đơn Hàng</title>
-    <link rel="manifest" href="/manifest.json">
 
-    <!-- Firebase SDK v9 -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js"></script>
+    <!-- QR Code Scanner Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.min.js"></script>
 
     <style>
         * {
@@ -276,6 +274,7 @@
             border-radius: 15px;
             overflow: hidden;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            position: relative;
         }
 
         #qr-video {
@@ -284,6 +283,36 @@
             object-fit: cover;
             display: block;
             background: #000;
+        }
+
+        .scan-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px;
+            height: 200px;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            pointer-events: none;
+        }
+
+        .scan-overlay::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            right: -10px;
+            bottom: -10px;
+            border: 2px solid rgba(102, 126, 234, 0.3);
+            border-radius: 15px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.05); }
+            100% { opacity: 1; transform: scale(1); }
         }
 
         #scanStatus {
@@ -326,6 +355,21 @@
 
         .notification.info {
             background: linear-gradient(135deg, #17a2b8, #667eea);
+        }
+
+        .manual-input {
+            margin-top: 20px;
+            padding: 20px;
+            border-top: 2px solid #f0f0f0;
+        }
+
+        .manual-input h5 {
+            margin: 0 0 15px 0;
+            color: #667eea;
+        }
+
+        .manual-input input {
+            margin-bottom: 10px;
         }
 
         @media (max-width: 768px) {
@@ -412,26 +456,21 @@
             <h3>Quét mã QR</h3>
             <div id="videoContainer">
                 <video id="qr-video" autoplay playsinline></video>
+                <div class="scan-overlay"></div>
             </div>
             <p id="scanStatus">Nhấn nút để bắt đầu quét</p>
             <button id="startCameraBtn" style="margin-top: 15px;">📷 Bật Camera</button>
+            
+            <div class="manual-input">
+                <h5>Hoặc nhập thủ công:</h5>
+                <input type="text" id="manualContent" placeholder="Nội dung đơn hàng">
+                <input type="number" id="manualPrice" placeholder="Giá trị (VNĐ)">
+                <button onclick="orderManager.addManualOrder()" style="margin-top: 10px;">➕ Thêm đơn hàng</button>
+            </div>
         </div>
     </div>
 
     <script>
-        // Khởi tạo Firebase
-        const firebaseConfig = {
-            apiKey: "AIzaSyD-MjMnmrCuZhEwacmeXXiTppMB42p9Epg",
-            authDomain: "phu117.firebaseapp.com",
-            projectId: "phu117",
-            storageBucket: "phu117.firebasestorage.app",
-            messagingSenderId: "612585313910",
-            appId: "1:612585313910:web:ae5815ac048f861a4eb157"
-        };
-
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-
         class OrderManager {
             constructor() {
                 this.orders = [];
@@ -440,15 +479,15 @@
                 this.currentStream = null;
                 this.isScanning = false;
                 this.scanInterval = null;
-                this.unsubscribe = null;
                 
                 this.initializeApp();
             }
 
             async initializeApp() {
                 try {
-                    await this.setupRealtimeListener();
+                    this.loadOrdersFromStorage();
                     this.setupEventListeners();
+                    this.renderOrders();
                     console.log('App initialized successfully');
                 } catch (error) {
                     console.error('Error initializing app:', error);
@@ -456,27 +495,16 @@
                 }
             }
 
-            // Thiết lập listener real-time cho Firestore
-            setupRealtimeListener() {
-                // Hủy listener cũ nếu có
-                if (this.unsubscribe) {
-                    this.unsubscribe();
-                }
+            // Load orders from localStorage
+            loadOrdersFromStorage() {
+                const savedOrders = JSON.parse(localStorage.getItem('qr_orders') || '[]');
+                this.orders = savedOrders;
+                this.filteredOrders = [...this.orders];
+            }
 
-                // Tạo listener mới
-                this.unsubscribe = db.collection('orders')
-                    .orderBy('timestamp', 'desc')
-                    .onSnapshot((snapshot) => {
-                        this.orders = snapshot.docs.map(doc => ({ 
-                            id: doc.id, 
-                            ...doc.data() 
-                        }));
-                        this.filteredOrders = [...this.orders];
-                        this.renderOrders();
-                    }, (error) => {
-                        console.error('Error listening to orders:', error);
-                        this.showNotification('Lỗi kết nối database', 'error');
-                    });
+            // Save orders to localStorage
+            saveOrdersToStorage() {
+                localStorage.setItem('qr_orders', JSON.stringify(this.orders));
             }
 
             // Render danh sách đơn hàng
@@ -489,6 +517,9 @@
                     this.updateStats();
                     return;
                 }
+
+                // Sắp xếp theo thời gian mới nhất
+                this.filteredOrders.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
                 // Phân trang
                 const totalPages = Math.ceil(this.filteredOrders.length / this.itemsPerPage);
@@ -612,15 +643,14 @@
 
                     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
                     
-                    // Tạo QR giả lập (vì không có thư viện QR reader)
-                    // Trong thực tế, bạn cần thêm thư viện jsQR hoặc tương tự
-                    setTimeout(() => {
-                        if (this.isScanning) {
-                            this.handleQrResult(`Đơn hàng #${this.orders.length + 1} - Giá: ${Math.floor(Math.random() * 500000) + 50000}đ`);
+                    // Sử dụng jsQR để quét QR code
+                    if (window.jsQR) {
+                        const code = jsQR(imageData.data, imageData.width, imageData.height);
+                        if (code) {
+                            this.handleQrResult(code.data);
                         }
-                    }, 3000); // Giả lập quét thành công sau 3 giây
-
-                }, 500);
+                    }
+                }, 100);
             }
 
             // Xử lý kết quả QR
@@ -632,13 +662,21 @@
                     
                     // Tạo đơn hàng mới
                     const newOrder = {
+                        id: Date.now().toString(),
                         content: qrData,
                         timestamp: new Date().toISOString(),
-                        value: this.extractValueFromQR(qrData) || Math.floor(Math.random() * 500000) + 50000
+                        value: this.extractValueFromQR(qrData) || 0
                     };
 
-                    // Lưu vào Firestore
-                    await db.collection('orders').add(newOrder);
+                    // Thêm vào danh sách
+                    this.orders.unshift(newOrder);
+                    this.filteredOrders = [...this.orders];
+                    
+                    // Lưu vào localStorage
+                    this.saveOrdersToStorage();
+                    
+                    // Render lại
+                    this.renderOrders();
                     
                     this.showNotification('Đã thêm đơn hàng thành công!', 'success');
                     this.stopQRScan();
@@ -649,6 +687,36 @@
                 }
             }
 
+            // Thêm đơn hàng thủ công
+            addManualOrder() {
+                const content = document.getElementById('manualContent').value.trim();
+                const price = document.getElementById('manualPrice').value;
+
+                if (!content) {
+                    this.showNotification('Vui lòng nhập nội dung đơn hàng', 'warning');
+                    return;
+                }
+
+                const newOrder = {
+                    id: Date.now().toString(),
+                    content: content,
+                    timestamp: new Date().toISOString(),
+                    value: parseInt(price) || 0
+                };
+
+                this.orders.unshift(newOrder);
+                this.filteredOrders = [...this.orders];
+                this.saveOrdersToStorage();
+                this.renderOrders();
+
+                // Clear form
+                document.getElementById('manualContent').value = '';
+                document.getElementById('manualPrice').value = '';
+
+                this.showNotification('Đã thêm đơn hàng thành công!', 'success');
+                this.stopQRScan();
+            }
+
             // Trích xuất giá trị từ QR code
             extractValueFromQR(qrData) {
                 const patterns = [
@@ -656,15 +724,16 @@
                     /(\d+)\s*VND/gi,
                     /amount[:\s]*(\d+)/gi,
                     /price[:\s]*(\d+)/gi,
-                    /giá[:\s]*(\d+)/gi
+                    /giá[:\s]*(\d+)/gi,
+                    /(\d{1,3}(?:[.,]\d{3})*)/g
                 ];
 
                 for (const pattern of patterns) {
                     const match = qrData.match(pattern);
                     if (match) {
-                        const numbers = match[0].match(/\d+/);
+                        const numbers = match[0].replace(/[^\d]/g, '');
                         if (numbers) {
-                            return parseInt(numbers[0]);
+                            return parseInt(numbers);
                         }
                     }
                 }
@@ -694,11 +763,14 @@
             }
 
             // Xóa đơn hàng
-            async deleteOrder(orderId) {
+            deleteOrder(orderId) {
                 if (!confirm('Bạn có chắc muốn xóa đơn hàng này?')) return;
 
                 try {
-                    await db.collection('orders').doc(orderId).delete();
+                    this.orders = this.orders.filter(order => order.id !== orderId);
+                    this.filteredOrders = this.filteredOrders.filter(order => order.id !== orderId);
+                    this.saveOrdersToStorage();
+                    this.renderOrders();
                     this.showNotification('Đã xóa đơn hàng', 'success');
                 } catch (error) {
                     console.error('Error deleting order:', error);
@@ -779,65 +851,3 @@
             setupEventListeners() {
                 // Quét QR
                 document.getElementById('startScan').addEventListener('click', () => {
-                    this.startQRScan();
-                });
-
-                // Bật camera
-                document.getElementById('startCameraBtn').addEventListener('click', () => {
-                    this.startCamera();
-                });
-
-                // Đóng modal
-                document.querySelector('.modal-close').addEventListener('click', () => {
-                    this.stopQRScan();
-                });
-
-                // Tìm kiếm
-                const searchInput = document.getElementById('searchInput');
-                let searchTimeout;
-                searchInput.addEventListener('input', (e) => {
-                    clearTimeout(searchTimeout);
-                    searchTimeout = setTimeout(() => {
-                        this.searchOrders(e.target.value);
-                    }, 300);
-                });
-
-                // Xuất CSV
-                document.getElementById('exportButton').addEventListener('click', () => {
-                    this.exportToCSV();
-                });
-
-                // Đóng modal khi click outside
-                document.querySelector('.modal').addEventListener('click', (e) => {
-                    if (e.target.classList.contains('modal')) {
-                        this.stopQRScan();
-                    }
-                });
-            }
-
-            // Cleanup khi thoát
-            destroy() {
-                if (this.unsubscribe) {
-                    this.unsubscribe();
-                }
-                this.stopQRScan();
-            }
-        }
-
-        // Khởi tạo ứng dụng
-        let orderManager;
-        
-        // Đợi DOM load xong
-        document.addEventListener('DOMContentLoaded', () => {
-            orderManager = new OrderManager();
-        });
-
-        // Cleanup khi thoát trang
-        window.addEventListener('beforeunload', () => {
-            if (orderManager) {
-                orderManager.destroy();
-            }
-        });
-    </script>
-</body>
-</html>
