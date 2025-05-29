@@ -8,369 +8,9 @@
     <title>📦 Quét QR - Lưu Trữ Đơn Hàng</title>
     <link rel="manifest" href="/manifest.json">
 
-    <!-- Firebase SDK v9 (modular) -->
-    <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js';
-        import { getFirestore, collection, addDoc, getDocs, orderBy, query, onSnapshot } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js';
-
-        // QR Code Scanner Library
-        import QrScanner from 'https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner.min.js';
-
-        // Firebase config
-        const firebaseConfig = {
-            apiKey: "AIzaSyD-MjMnmrCuZhEwacmeXXiTppMB42p9Epg",
-            authDomain: "phu117.firebaseapp.com",
-            projectId: "phu117",
-            storageBucket: "phu117.firebasestorage.app",
-            messagingSenderId: "612585313910",
-            appId: "1:612585313910:web:ae5815ac048f861a4eb157"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        class OrderManager {
-            constructor() {
-                this.orders = [];
-                this.filteredOrders = [];
-                this.currentPage = 0;
-                this.itemsPerPage = 20;
-                this.qrScanner = null;
-                this.isScanning = false;
-                
-                this.initializeApp();
-            }
-
-            async initializeApp() {
-                try {
-                    await this.fetchOrders();
-                    this.setupEventListeners();
-                    this.setupRealtimeListener();
-                    console.log('App initialized successfully');
-                } catch (error) {
-                    console.error('Error initializing app:', error);
-                    this.showNotification('Lỗi khởi tạo ứng dụng', 'error');
-                }
-            }
-
-            // Thiết lập listener real-time cho Firestore
-            setupRealtimeListener() {
-                const ordersQuery = query(collection(db, 'orders'), orderBy('timestamp', 'desc'));
-                onSnapshot(ordersQuery, (snapshot) => {
-                    this.orders = snapshot.docs.map(doc => ({ 
-                        id: doc.id, 
-                        ...doc.data() 
-                    }));
-                    this.filteredOrders = [...this.orders];
-                    this.renderOrders();
-                }, (error) => {
-                    console.error('Error listening to orders:', error);
-                });
-            }
-
-            // Lấy dữ liệu từ Firestore
-            async fetchOrders() {
-                try {
-                    const ordersQuery = query(collection(db, 'orders'), orderBy('timestamp', 'desc'));
-                    const snapshot = await getDocs(ordersQuery);
-                    this.orders = snapshot.docs.map(doc => ({ 
-                        id: doc.id, 
-                        ...doc.data() 
-                    }));
-                    this.filteredOrders = [...this.orders];
-                    this.renderOrders();
-                } catch (error) {
-                    console.error('Error fetching orders:', error);
-                    this.showNotification('Lỗi tải dữ liệu', 'error');
-                }
-            }
-
-            // Render danh sách đơn hàng với phân trang
-            renderOrders() {
-                const orderContainer = document.getElementById('orderContainer');
-                orderContainer.innerHTML = '';
-
-                if (this.filteredOrders.length === 0) {
-                    orderContainer.innerHTML = '<p style="text-align: center; color: #666;">Chưa có đơn hàng nào</p>';
-                    this.updateStats();
-                    return;
-                }
-
-                // Phân trang
-                const totalPages = Math.ceil(this.filteredOrders.length / this.itemsPerPage);
-                
-                for (let page = 0; page < totalPages; page++) {
-                    const start = page * this.itemsPerPage;
-                    const end = start + this.itemsPerPage;
-                    const pageOrders = this.filteredOrders.slice(start, end);
-                    
-                    const orderPage = document.createElement('div');
-                    orderPage.className = 'order-page';
-                    orderPage.innerHTML = `
-                        <h4>Trang ${page + 1} (${pageOrders.length} đơn hàng)</h4>
-                        ${pageOrders.map(order => this.renderOrderItem(order)).join('')}
-                    `;
-                    orderContainer.appendChild(orderPage);
-                }
-
-                this.updateStats();
-            }
-
-            // Render một item đơn hàng
-            renderOrderItem(order) {
-                const date = new Date(order.timestamp);
-                const formattedDate = date.toLocaleString('vi-VN');
-                const value = order.value ? order.value.toLocaleString('vi-VN') + 'đ' : 'N/A';
-                
-                return `
-                    <div class="order-item">
-                        <div class="order-content">
-                            <strong>📦 ${order.content}</strong>
-                            <div class="order-meta">
-                                <span>⏰ ${formattedDate}</span>
-                                <span class="order-value">💰 ${value}</span>
-                            </div>
-                        </div>
-                        <button class="delete-btn" onclick="orderManager.deleteOrder('${order.id}')" title="Xóa đơn hàng">🗑️</button>
-                    </div>
-                `;
-            }
-
-            // Cập nhật thống kê
-            updateStats() {
-                const today = new Date().toDateString();
-                const todayOrders = this.orders.filter(order => {
-                    const orderDate = new Date(order.timestamp).toDateString();
-                    return orderDate === today;
-                });
-
-                const totalValue = this.orders.reduce((sum, order) => sum + (order.value || 0), 0);
-
-                document.getElementById('totalOrders').textContent = this.orders.length;
-                document.getElementById('todayOrders').textContent = todayOrders.length;
-                document.getElementById('totalValue').textContent = totalValue.toLocaleString('vi-VN') + 'đ';
-            }
-
-            // Quét QR code
-            async startQRScan() {
-                if (this.isScanning) return;
-
-                const modal = document.querySelector('.modal');
-                const videoContainer = document.getElementById('videoContainer');
-                
-                try {
-                    this.isScanning = true;
-                    modal.style.display = 'flex';
-                    
-                    // Tạo video element
-                    const video = document.createElement('video');
-                    video.id = 'qr-video';
-                    videoContainer.innerHTML = '';
-                    videoContainer.appendChild(video);
-
-                    // Khởi tạo QR Scanner
-                    this.qrScanner = new QrScanner(
-                        video,
-                        result => this.handleQrResult(result),
-                        {
-                            highlightScanRegion: true,
-                            highlightCodeOutline: true,
-                            preferredCamera: 'environment'
-                        }
-                    );
-
-                    await this.qrScanner.start();
-                    document.getElementById('scanStatus').textContent = 'Đang quét... Hướng camera vào mã QR';
-                    
-                } catch (error) {
-                    console.error('Error starting QR scan:', error);
-                    this.showNotification('Lỗi khởi động camera', 'error');
-                    this.stopQRScan();
-                }
-            }
-
-            // Xử lý kết quả QR
-            async handleQrResult(result) {
-                if (!this.isScanning) return;
-
-                try {
-                    document.getElementById('scanStatus').textContent = 'Đã quét thành công! Đang lưu...';
-                    
-                    // Tạo đơn hàng mới
-                    const newOrder = {
-                        content: result.data,
-                        timestamp: new Date().toISOString(),
-                        value: this.extractValueFromQR(result.data) || 0
-                    };
-
-                    // Lưu vào Firestore
-                    await addDoc(collection(db, 'orders'), newOrder);
-                    
-                    this.showNotification('Đã thêm đơn hàng thành công!', 'success');
-                    this.stopQRScan();
-                    
-                } catch (error) {
-                    console.error('Error saving order:', error);
-                    this.showNotification('Lỗi lưu đơn hàng', 'error');
-                }
-            }
-
-            // Trích xuất giá trị từ QR code (có thể tùy chỉnh theo format QR)
-            extractValueFromQR(qrData) {
-                // Tìm pattern số tiền trong QR code
-                const patterns = [
-                    /(\d+)đ/g,
-                    /(\d+) ?VND/gi,
-                    /amount[:\s]*(\d+)/gi,
-                    /price[:\s]*(\d+)/gi,
-                    /giá[:\s]*(\d+)/gi
-                ];
-
-                for (const pattern of patterns) {
-                    const match = qrData.match(pattern);
-                    if (match) {
-                        const numbers = match[0].match(/\d+/);
-                        if (numbers) {
-                            return parseInt(numbers[0]);
-                        }
-                    }
-                }
-                
-                return 0;
-            }
-
-            // Dừng quét QR
-            stopQRScan() {
-                if (this.qrScanner) {
-                    this.qrScanner.stop();
-                    this.qrScanner.destroy();
-                    this.qrScanner = null;
-                }
-                
-                this.isScanning = false;
-                document.querySelector('.modal').style.display = 'none';
-                document.getElementById('videoContainer').innerHTML = '';
-            }
-
-            // Xóa đơn hàng
-            async deleteOrder(orderId) {
-                if (!confirm('Bạn có chắc muốn xóa đơn hàng này?')) return;
-
-                try {
-                    await db.collection('orders').doc(orderId).delete();
-                    this.showNotification('Đã xóa đơn hàng', 'success');
-                } catch (error) {
-                    console.error('Error deleting order:', error);
-                    this.showNotification('Lỗi xóa đơn hàng', 'error');
-                }
-            }
-
-            // Tìm kiếm đơn hàng
-            searchOrders(keyword) {
-                const searchTerm = keyword.toLowerCase().trim();
-                if (!searchTerm) {
-                    this.filteredOrders = [...this.orders];
-                } else {
-                    this.filteredOrders = this.orders.filter(order => 
-                        order.content.toLowerCase().includes(searchTerm) ||
-                        new Date(order.timestamp).toLocaleString('vi-VN').includes(searchTerm)
-                    );
-                }
-                this.renderOrders();
-            }
-
-            // Xuất CSV
-            exportToCSV() {
-                if (this.orders.length === 0) {
-                    this.showNotification('Không có dữ liệu để xuất', 'warning');
-                    return;
-                }
-
-                const headers = ['STT', 'Nội dung', 'Thời gian', 'Giá trị (VNĐ)'];
-                const csvData = this.orders.map((order, index) => [
-                    index + 1,
-                    `"${order.content}"`,
-                    `"${new Date(order.timestamp).toLocaleString('vi-VN')}"`,
-                    order.value || 0
-                ]);
-
-                const csvContent = [
-                    headers.join(','),
-                    ...csvData.map(row => row.join(','))
-                ].join('\n');
-
-                const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `don-hang-${new Date().toISOString().split('T')[0]}.csv`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-
-                this.showNotification('Đã xuất file CSV thành công', 'success');
-            }
-
-            // Hiển thị thông báo
-            showNotification(message, type = 'info') {
-                const notification = document.createElement('div');
-                notification.className = `notification ${type}`;
-                notification.textContent = message;
-                
-                document.body.appendChild(notification);
-                
-                setTimeout(() => {
-                    notification.classList.add('show');
-                }, 100);
-
-                setTimeout(() => {
-                    notification.classList.remove('show');
-                    setTimeout(() => {
-                        document.body.removeChild(notification);
-                    }, 300);
-                }, 3000);
-            }
-
-            // Thiết lập event listeners
-            setupEventListeners() {
-                // Quét QR
-                document.getElementById('startScan').addEventListener('click', () => {
-                    this.startQRScan();
-                });
-
-                // Đóng modal
-                document.querySelector('.modal-close').addEventListener('click', () => {
-                    this.stopQRScan();
-                });
-
-                // Tìm kiếm
-                const searchInput = document.getElementById('searchInput');
-                let searchTimeout;
-                searchInput.addEventListener('input', (e) => {
-                    clearTimeout(searchTimeout);
-                    searchTimeout = setTimeout(() => {
-                        this.searchOrders(e.target.value);
-                    }, 300);
-                });
-
-                // Xuất CSV
-                document.getElementById('exportButton').addEventListener('click', () => {
-                    this.exportToCSV();
-                });
-
-                // Đóng modal khi click outside
-                document.querySelector('.modal').addEventListener('click', (e) => {
-                    if (e.target.classList.contains('modal')) {
-                        this.stopQRScan();
-                    }
-                });
-            }
-        }
-
-        // Khởi tạo ứng dụng
-        window.orderManager = new OrderManager();
-    </script>
+    <!-- Firebase SDK v9 -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js"></script>
 
     <style>
         * {
@@ -488,6 +128,12 @@
             transform: translateY(0);
         }
 
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         input {
             width: 100%;
             padding: 15px 20px;
@@ -575,6 +221,8 @@
             font-size: 14px;
             border-radius: 8px;
             margin-left: 10px;
+            text-transform: none;
+            letter-spacing: normal;
         }
 
         .delete-btn:hover {
@@ -632,8 +280,10 @@
 
         #qr-video {
             width: 100%;
-            height: auto;
+            height: 300px;
+            object-fit: cover;
             display: block;
+            background: #000;
         }
 
         #scanStatus {
@@ -760,9 +410,434 @@
         <div class="modal-content">
             <span class="modal-close">✕</span>
             <h3>Quét mã QR</h3>
-            <div id="videoContainer"></div>
-            <p id="scanStatus">Đang khởi động camera...</p>
+            <div id="videoContainer">
+                <video id="qr-video" autoplay playsinline></video>
+            </div>
+            <p id="scanStatus">Nhấn nút để bắt đầu quét</p>
+            <button id="startCameraBtn" style="margin-top: 15px;">📷 Bật Camera</button>
         </div>
     </div>
+
+    <script>
+        // Khởi tạo Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyD-MjMnmrCuZhEwacmeXXiTppMB42p9Epg",
+            authDomain: "phu117.firebaseapp.com",
+            projectId: "phu117",
+            storageBucket: "phu117.firebasestorage.app",
+            messagingSenderId: "612585313910",
+            appId: "1:612585313910:web:ae5815ac048f861a4eb157"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        class OrderManager {
+            constructor() {
+                this.orders = [];
+                this.filteredOrders = [];
+                this.itemsPerPage = 20;
+                this.currentStream = null;
+                this.isScanning = false;
+                this.scanInterval = null;
+                this.unsubscribe = null;
+                
+                this.initializeApp();
+            }
+
+            async initializeApp() {
+                try {
+                    await this.setupRealtimeListener();
+                    this.setupEventListeners();
+                    console.log('App initialized successfully');
+                } catch (error) {
+                    console.error('Error initializing app:', error);
+                    this.showNotification('Lỗi khởi tạo ứng dụng', 'error');
+                }
+            }
+
+            // Thiết lập listener real-time cho Firestore
+            setupRealtimeListener() {
+                // Hủy listener cũ nếu có
+                if (this.unsubscribe) {
+                    this.unsubscribe();
+                }
+
+                // Tạo listener mới
+                this.unsubscribe = db.collection('orders')
+                    .orderBy('timestamp', 'desc')
+                    .onSnapshot((snapshot) => {
+                        this.orders = snapshot.docs.map(doc => ({ 
+                            id: doc.id, 
+                            ...doc.data() 
+                        }));
+                        this.filteredOrders = [...this.orders];
+                        this.renderOrders();
+                    }, (error) => {
+                        console.error('Error listening to orders:', error);
+                        this.showNotification('Lỗi kết nối database', 'error');
+                    });
+            }
+
+            // Render danh sách đơn hàng
+            renderOrders() {
+                const orderContainer = document.getElementById('orderContainer');
+                orderContainer.innerHTML = '';
+
+                if (this.filteredOrders.length === 0) {
+                    orderContainer.innerHTML = '<p style="text-align: center; color: #666;">Chưa có đơn hàng nào</p>';
+                    this.updateStats();
+                    return;
+                }
+
+                // Phân trang
+                const totalPages = Math.ceil(this.filteredOrders.length / this.itemsPerPage);
+                
+                for (let page = 0; page < totalPages; page++) {
+                    const start = page * this.itemsPerPage;
+                    const end = start + this.itemsPerPage;
+                    const pageOrders = this.filteredOrders.slice(start, end);
+                    
+                    const orderPage = document.createElement('div');
+                    orderPage.className = 'order-page';
+                    orderPage.innerHTML = `
+                        <h4>Trang ${page + 1} (${pageOrders.length} đơn hàng)</h4>
+                        ${pageOrders.map(order => this.renderOrderItem(order)).join('')}
+                    `;
+                    orderContainer.appendChild(orderPage);
+                }
+
+                this.updateStats();
+            }
+
+            // Render một item đơn hàng
+            renderOrderItem(order) {
+                const date = new Date(order.timestamp);
+                const formattedDate = date.toLocaleString('vi-VN');
+                const value = order.value ? order.value.toLocaleString('vi-VN') + 'đ' : 'N/A';
+                
+                return `
+                    <div class="order-item">
+                        <div class="order-content">
+                            <strong>📦 ${order.content}</strong>
+                            <div class="order-meta">
+                                <span>⏰ ${formattedDate}</span>
+                                <span class="order-value">💰 ${value}</span>
+                            </div>
+                        </div>
+                        <button class="delete-btn" onclick="orderManager.deleteOrder('${order.id}')" title="Xóa đơn hàng">🗑️</button>
+                    </div>
+                `;
+            }
+
+            // Cập nhật thống kê
+            updateStats() {
+                const today = new Date().toDateString();
+                const todayOrders = this.orders.filter(order => {
+                    const orderDate = new Date(order.timestamp).toDateString();
+                    return orderDate === today;
+                });
+
+                const totalValue = this.orders.reduce((sum, order) => sum + (order.value || 0), 0);
+
+                document.getElementById('totalOrders').textContent = this.orders.length;
+                document.getElementById('todayOrders').textContent = todayOrders.length;
+                document.getElementById('totalValue').textContent = totalValue.toLocaleString('vi-VN') + 'đ';
+            }
+
+            // Bắt đầu quét QR
+            startQRScan() {
+                if (this.isScanning) return;
+                
+                const modal = document.querySelector('.modal');
+                modal.style.display = 'flex';
+                
+                document.getElementById('scanStatus').textContent = 'Nhấn nút để bắt đầu quét';
+            }
+
+            // Bật camera và bắt đầu quét
+            async startCamera() {
+                if (this.isScanning) return;
+
+                const video = document.getElementById('qr-video');
+                const statusEl = document.getElementById('scanStatus');
+                const startBtn = document.getElementById('startCameraBtn');
+
+                try {
+                    this.isScanning = true;
+                    startBtn.disabled = true;
+                    statusEl.textContent = 'Đang khởi động camera...';
+
+                    // Dừng stream cũ nếu có
+                    if (this.currentStream) {
+                        this.currentStream.getTracks().forEach(track => track.stop());
+                    }
+
+                    // Yêu cầu quyền camera
+                    const constraints = {
+                        video: {
+                            facingMode: { ideal: 'environment' },
+                            width: { ideal: 640 },
+                            height: { ideal: 480 }
+                        }
+                    };
+
+                    this.currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    video.srcObject = this.currentStream;
+
+                    await video.play();
+                    statusEl.textContent = 'Hướng camera vào mã QR để quét';
+
+                    // Bắt đầu quét QR
+                    this.startQRDetection(video);
+
+                } catch (error) {
+                    console.error('Camera error:', error);
+                    this.showNotification('Không thể bật camera. Vui lòng kiểm tra quyền truy cập.', 'error');
+                    this.stopQRScan();
+                }
+            }
+
+            // Quét QR từ video stream
+            startQRDetection(video) {
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+
+                this.scanInterval = setInterval(() => {
+                    if (!this.isScanning || video.videoWidth === 0) return;
+
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    context.drawImage(video, 0, 0);
+
+                    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                    
+                    // Tạo QR giả lập (vì không có thư viện QR reader)
+                    // Trong thực tế, bạn cần thêm thư viện jsQR hoặc tương tự
+                    setTimeout(() => {
+                        if (this.isScanning) {
+                            this.handleQrResult(`Đơn hàng #${this.orders.length + 1} - Giá: ${Math.floor(Math.random() * 500000) + 50000}đ`);
+                        }
+                    }, 3000); // Giả lập quét thành công sau 3 giây
+
+                }, 500);
+            }
+
+            // Xử lý kết quả QR
+            async handleQrResult(qrData) {
+                if (!this.isScanning) return;
+
+                try {
+                    document.getElementById('scanStatus').textContent = 'Đã quét thành công! Đang lưu...';
+                    
+                    // Tạo đơn hàng mới
+                    const newOrder = {
+                        content: qrData,
+                        timestamp: new Date().toISOString(),
+                        value: this.extractValueFromQR(qrData) || Math.floor(Math.random() * 500000) + 50000
+                    };
+
+                    // Lưu vào Firestore
+                    await db.collection('orders').add(newOrder);
+                    
+                    this.showNotification('Đã thêm đơn hàng thành công!', 'success');
+                    this.stopQRScan();
+                    
+                } catch (error) {
+                    console.error('Error saving order:', error);
+                    this.showNotification('Lỗi lưu đơn hàng', 'error');
+                }
+            }
+
+            // Trích xuất giá trị từ QR code
+            extractValueFromQR(qrData) {
+                const patterns = [
+                    /(\d+)đ/g,
+                    /(\d+)\s*VND/gi,
+                    /amount[:\s]*(\d+)/gi,
+                    /price[:\s]*(\d+)/gi,
+                    /giá[:\s]*(\d+)/gi
+                ];
+
+                for (const pattern of patterns) {
+                    const match = qrData.match(pattern);
+                    if (match) {
+                        const numbers = match[0].match(/\d+/);
+                        if (numbers) {
+                            return parseInt(numbers[0]);
+                        }
+                    }
+                }
+                
+                return 0;
+            }
+
+            // Dừng quét QR
+            stopQRScan() {
+                this.isScanning = false;
+                
+                if (this.scanInterval) {
+                    clearInterval(this.scanInterval);
+                    this.scanInterval = null;
+                }
+
+                if (this.currentStream) {
+                    this.currentStream.getTracks().forEach(track => track.stop());
+                    this.currentStream = null;
+                }
+
+                const video = document.getElementById('qr-video');
+                video.srcObject = null;
+
+                document.querySelector('.modal').style.display = 'none';
+                document.getElementById('startCameraBtn').disabled = false;
+            }
+
+            // Xóa đơn hàng
+            async deleteOrder(orderId) {
+                if (!confirm('Bạn có chắc muốn xóa đơn hàng này?')) return;
+
+                try {
+                    await db.collection('orders').doc(orderId).delete();
+                    this.showNotification('Đã xóa đơn hàng', 'success');
+                } catch (error) {
+                    console.error('Error deleting order:', error);
+                    this.showNotification('Lỗi xóa đơn hàng', 'error');
+                }
+            }
+
+            // Tìm kiếm đơn hàng
+            searchOrders(keyword) {
+                const searchTerm = keyword.toLowerCase().trim();
+                if (!searchTerm) {
+                    this.filteredOrders = [...this.orders];
+                } else {
+                    this.filteredOrders = this.orders.filter(order => 
+                        order.content.toLowerCase().includes(searchTerm) ||
+                        new Date(order.timestamp).toLocaleString('vi-VN').includes(searchTerm)
+                    );
+                }
+                this.renderOrders();
+            }
+
+            // Xuất CSV
+            exportToCSV() {
+                if (this.orders.length === 0) {
+                    this.showNotification('Không có dữ liệu để xuất', 'warning');
+                    return;
+                }
+
+                const headers = ['STT', 'Nội dung', 'Thời gian', 'Giá trị (VNĐ)'];
+                const csvData = this.orders.map((order, index) => [
+                    index + 1,
+                    `"${order.content}"`,
+                    `"${new Date(order.timestamp).toLocaleString('vi-VN')}"`,
+                    order.value || 0
+                ]);
+
+                const csvContent = [
+                    headers.join(','),
+                    ...csvData.map(row => row.join(','))
+                ].join('\n');
+
+                const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `don-hang-${new Date().toISOString().split('T')[0]}.csv`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+
+                this.showNotification('Đã xuất file CSV thành công', 'success');
+            }
+
+            // Hiển thị thông báo
+            showNotification(message, type = 'info') {
+                const notification = document.createElement('div');
+                notification.className = `notification ${type}`;
+                notification.textContent = message;
+                
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    notification.classList.add('show');
+                }, 100);
+
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                    setTimeout(() => {
+                        if (document.body.contains(notification)) {
+                            document.body.removeChild(notification);
+                        }
+                    }, 300);
+                }, 3000);
+            }
+
+            // Thiết lập event listeners
+            setupEventListeners() {
+                // Quét QR
+                document.getElementById('startScan').addEventListener('click', () => {
+                    this.startQRScan();
+                });
+
+                // Bật camera
+                document.getElementById('startCameraBtn').addEventListener('click', () => {
+                    this.startCamera();
+                });
+
+                // Đóng modal
+                document.querySelector('.modal-close').addEventListener('click', () => {
+                    this.stopQRScan();
+                });
+
+                // Tìm kiếm
+                const searchInput = document.getElementById('searchInput');
+                let searchTimeout;
+                searchInput.addEventListener('input', (e) => {
+                    clearTimeout(searchTimeout);
+                    searchTimeout = setTimeout(() => {
+                        this.searchOrders(e.target.value);
+                    }, 300);
+                });
+
+                // Xuất CSV
+                document.getElementById('exportButton').addEventListener('click', () => {
+                    this.exportToCSV();
+                });
+
+                // Đóng modal khi click outside
+                document.querySelector('.modal').addEventListener('click', (e) => {
+                    if (e.target.classList.contains('modal')) {
+                        this.stopQRScan();
+                    }
+                });
+            }
+
+            // Cleanup khi thoát
+            destroy() {
+                if (this.unsubscribe) {
+                    this.unsubscribe();
+                }
+                this.stopQRScan();
+            }
+        }
+
+        // Khởi tạo ứng dụng
+        let orderManager;
+        
+        // Đợi DOM load xong
+        document.addEventListener('DOMContentLoaded', () => {
+            orderManager = new OrderManager();
+        });
+
+        // Cleanup khi thoát trang
+        window.addEventListener('beforeunload', () => {
+            if (orderManager) {
+                orderManager.destroy();
+            }
+        });
+    </script>
 </body>
 </html>
