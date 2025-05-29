@@ -139,7 +139,7 @@
     </div>
 
     <div class="order-container" id="orderContainer">
-        <!-- Các ô đơn hàng sẽ được thêm vào đây -->
+        <p>📦 Chưa có đơn hàng nào<br>Hãy quét QR code để thêm đơn hàng đầu tiên!</p>
     </div>
 
     <div class="modal">
@@ -177,12 +177,16 @@
             const orderContainer = document.getElementById('orderContainer');
             orderContainer.innerHTML = '';
 
-            for (let i = 0; i < filteredOrders.length; i += 20) {
-                const pageOrders = filteredOrders.slice(i, i + 20);
-                const orderPage = document.createElement('div');
-                orderPage.className = 'order-page';
-                orderPage.innerHTML = pageOrders.map(order => `<p>📦 ${order.content} - ${new Date(order.timestamp).toLocaleString()}</p>`).join('');
-                orderContainer.appendChild(orderPage);
+            if (filteredOrders.length === 0) {
+                orderContainer.innerHTML = '<p>📦 Chưa có đơn hàng nào<br>Hãy quét QR code để thêm đơn hàng đầu tiên!</p>';
+            } else {
+                for (let i = 0; i < filteredOrders.length; i += 20) {
+                    const pageOrders = filteredOrders.slice(i, i + 20);
+                    const orderPage = document.createElement('div');
+                    orderPage.className = 'order-page';
+                    orderPage.innerHTML = pageOrders.map(order => `<p>📦 ${order.content} - ${new Date(order.timestamp).toLocaleString()}</p>`).join('');
+                    orderContainer.appendChild(orderPage);
+                }
             }
 
             updateStats();
@@ -208,7 +212,7 @@
 
             const closeBtn = document.createElement('span');
             closeBtn.className = 'close';
-            closeBtn.textContent = '✕';
+            closeBtn.textContent = '✕s';
             modal.appendChild(closeBtn);
 
             const message = document.createElement('p');
@@ -217,24 +221,30 @@
 
             modal.style.display = 'block';
 
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                .then(stream => {
-                    video.srcObject = stream;
-                    setTimeout(async () => {
-                        const qrData = `Đơn hàng #${orders.length + 1} - Giá: 100000đ`;
-                        const newOrder = { content: qrData, timestamp: new Date().toISOString(), value: 100000 };
-                        await db.collection('orders').add(newOrder);
-                        orders.push(newOrder);
-                        filteredOrders = [...orders];
-                        renderOrders();
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                    .then(stream => {
+                        video.srcObject = stream;
+                        setTimeout(async () => {
+                            const qrData = `Đơn hàng #${orders.length + 1} - Giá: 100000đ`;
+                            const newOrder = { content: qrData, timestamp: new Date().toISOString(), value: 100000 };
+                            await db.collection('orders').add(newOrder);
+                            orders.push(newOrder);
+                            filteredOrders = [...orders];
+                            renderOrders();
+                            modal.style.display = 'none';
+                            stream.getTracks().forEach(track => track.stop());
+                        }, 2000);
+                    })
+                    .catch(err => {
+                        console.error('Lỗi camera:', err);
+                        alert('Không thể truy cập camera. Vui lòng kiểm tra quyền camera trong Settings > Safari > Camera và đảm bảo chọn "Allow".');
                         modal.style.display = 'none';
-                        stream.getTracks().forEach(track => track.stop());
-                    }, 2000);
-                })
-                .catch(err => {
-                    console.error('Lỗi camera:', err);
-                    modal.style.display = 'none';
-                });
+                    });
+            } else {
+                alert('Thiết bị của bạn không hỗ trợ truy cập camera.');
+                modal.style.display = 'none';
+            }
         });
 
         // Đóng modal
