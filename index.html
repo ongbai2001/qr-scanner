@@ -196,6 +196,70 @@
             border: 1px solid #ffeaa7;
         }
 
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            gap: 15px;
+        }
+
+        .pagination-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .page-info {
+            background: #f8f9fa;
+            padding: 8px 15px;
+            border-radius: 15px;
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .page-selector {
+            display: flex;
+            gap: 5px;
+        }
+
+        .page-number {
+            width: 35px;
+            height: 35px;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+            background: #e9ecef;
+            color: #495057;
+        }
+
+        .page-number.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .page-number:hover:not(.active) {
+            background: #dee2e6;
+        }
+
         .table-section {
             background: white;
             border-radius: 12px;
@@ -335,7 +399,7 @@
                 <div class="table-header">
                     <h2>📋 Danh Sách Đơn Hàng</h2>
                     <div class="order-count">
-                        Tổng: <span id="total-orders">0</span> đơn
+                        Tổng: <span id="total-orders">0</span> đơn | Trang: <span id="current-page-display">1</span>/<span id="total-pages-display">1</span>
                     </div>
                 </div>
                 
@@ -360,6 +424,21 @@
                         </tbody>
                     </table>
                 </div>
+
+                <!-- Pagination Controls -->
+                <div class="pagination" id="pagination-controls" style="display: none;">
+                    <button class="pagination-btn" id="prev-btn" onclick="orderScanner.previousPage()">
+                        ⬅️ Trang Trước
+                    </button>
+                    
+                    <div class="page-info">
+                        <span id="page-info-text">Trang 1 / 1</span>
+                    </div>
+                    
+                    <button class="pagination-btn" id="next-btn" onclick="orderScanner.nextPage()">
+                        Trang Sau ➡️
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -367,10 +446,11 @@
     <script>
         class OrderScanner {
             constructor() {
-                this.orders = [];
+                this.allOrders = []; // Tất cả đơn hàng
+                this.currentPage = 1;
+                this.ordersPerPage = 10;
                 this.scanner = null;
                 this.isScanning = false;
-                this.maxOrders = 10;
                 this.unsubscribe = null;
                 
                 this.initializeElements();
@@ -386,6 +466,12 @@
                 this.firebaseStatusDiv = document.getElementById('firebase-status');
                 this.ordersTableBody = document.getElementById('orders-tbody');
                 this.totalOrdersSpan = document.getElementById('total-orders');
+                this.currentPageDisplay = document.getElementById('current-page-display');
+                this.totalPagesDisplay = document.getElementById('total-pages-display');
+                this.paginationControls = document.getElementById('pagination-controls');
+                this.prevBtn = document.getElementById('prev-btn');
+                this.nextBtn = document.getElementById('next-btn');
+                this.pageInfoText = document.getElementById('page-info-text');
             }
 
             bindEvents() {
@@ -398,18 +484,17 @@
                     // Đợi Firebase được khởi tạo
                     await this.waitForFirebase();
                     
-                    // Thiết lập real-time listener
-                    const { collection, query, orderBy, limit, onSnapshot } = window.firestoreFunctions;
+                    // Thiết lập real-time listener - lấy tất cả orders
+                    const { collection, query, orderBy, onSnapshot } = window.firestoreFunctions;
                     const ordersQuery = query(
                         collection(window.db, 'orders'),
-                        orderBy('createdAt', 'desc'),
-                        limit(this.maxOrders)
+                        orderBy('createdAt', 'desc')
                     );
 
                     this.unsubscribe = onSnapshot(ordersQuery, (snapshot) => {
-                        this.orders = [];
+                        this.allOrders = [];
                         snapshot.forEach((doc) => {
-                            this.orders.push({
+                            this.allOrders.push({
                                 id: doc.id,
                                 ...doc.data()
                             });
@@ -483,7 +568,7 @@
                 if (!qrData || qrData.trim() === '') return;
 
                 // Kiểm tra xem mã đã tồn tại chưa
-                if (this.orders.some(order => order.code === qrData)) {
+                if (this.allOrders.some(order => order.code === qrData)) {
                     this.updateStatus(`⚠️ Mã đơn hàng "${qrData}" đã tồn tại!`, 'error');
                     return;
                 }
@@ -504,12 +589,13 @@
                     
                     this.updateStatus(`✅ Đã lưu đơn hàng: ${qrData}`, 'success');
 
-                    // Tự động dừng quét sau khi quét thành công
-                    setTimeout(() => {
-                        if (this.isScanning) {
-                            this.stopScanning();
-                        }
-                    }, 1500);
+                    // Tự động dừng quét ngay sau khi thành công
+                    if (this.isScanning) {
+                        this.stopScanning();
+                    }
+
+                    // Chuyển về trang đầu tiên để thấy đơn hàng mới
+                    this.currentPage = 1;
 
                 } catch (error) {
                     console.error('Error saving order:', error);
