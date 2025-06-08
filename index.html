@@ -2,13 +2,15 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>📦 Quét QR - Lưu Trữ Đơn Hàng</title>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📦 Quét QR - Danh Sách Đơn Hàng</title>
+    
     <!-- QR Code Scanner Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.min.js"></script>
+    
+    <!-- Firebase SDK v9 -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js"></script>
 
     <style>
         * {
@@ -25,7 +27,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1000px;
             margin: 0 auto;
             background: rgba(255, 255, 255, 0.95);
             border-radius: 20px;
@@ -36,196 +38,115 @@
         h1 {
             text-align: center;
             font-size: 28px;
-            margin-bottom: 10px;
+            margin-bottom: 30px;
             background: linear-gradient(45deg, #667eea, #764ba2);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }
 
-        .subtitle {
-            text-align: center;
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 16px;
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            background: linear-gradient(135deg, #fff 0%, #f8f9ff 100%);
-            padding: 25px;
-            border-radius: 15px;
-            text-align: center;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
-            border: 1px solid rgba(102, 126, 234, 0.1);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-        }
-
-        .stat-card h3 {
-            font-size: 32px;
-            margin: 0 0 10px 0;
-            color: #667eea;
-            font-weight: bold;
-        }
-
-        .stat-card p {
-            margin: 0;
-            color: #666;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .actions {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .action-card {
-            background: white;
-            padding: 20px;
-            border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
-            border: 1px solid rgba(102, 126, 234, 0.1);
-        }
-
-        button {
-            width: 100%;
+        .scan-button {
+            display: block;
+            width: 200px;
+            margin: 0 auto 30px auto;
             padding: 15px 20px;
             border: none;
             border-radius: 10px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            font-size: 16px;
+            font-size: 18px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
         }
 
-        button:hover {
+        .scan-button:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
         }
 
-        button:active {
-            transform: translateY(0);
-        }
-
-        button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        input {
-            width: 100%;
-            padding: 15px 20px;
-            border: 2px solid #e1e5e9;
-            border-radius: 10px;
-            font-size: 16px;
-            transition: border-color 0.3s ease, box-shadow 0.3s ease;
-            background: #f8f9ff;
-        }
-
-        input:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        .order-container {
+        .table-container {
             background: white;
             border-radius: 15px;
-            padding: 25px;
+            padding: 20px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
-            border: 1px solid rgba(102, 126, 234, 0.1);
-        }
-
-        .order-page {
             margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #f0f0f0;
         }
 
-        .order-page:last-child {
-            border-bottom: none;
-            margin-bottom: 0;
-        }
-
-        .order-page h4 {
-            color: #667eea;
-            margin-bottom: 15px;
-            font-size: 18px;
-        }
-
-        .order-item {
+        .table-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 15px;
-            margin-bottom: 10px;
-            background: #f8f9ff;
-            border-radius: 10px;
-            border-left: 4px solid #667eea;
-            transition: all 0.3s ease;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
         }
 
-        .order-item:hover {
-            background: #f0f2ff;
-            transform: translateX(5px);
+        .table-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #667eea;
         }
 
-        .order-content {
-            flex: 1;
-        }
-
-        .order-content strong {
-            display: block;
-            margin-bottom: 5px;
-            color: #333;
-        }
-
-        .order-meta {
-            display: flex;
-            gap: 20px;
+        .page-info {
             font-size: 14px;
             color: #666;
         }
 
-        .order-value {
-            color: #28a745;
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 15px 10px;
+            text-align: left;
             font-weight: 600;
+            border-radius: 8px 8px 0 0;
         }
 
-        .delete-btn {
-            width: auto;
-            padding: 8px 12px;
-            background: #dc3545;
+        th:first-child {
+            border-radius: 8px 0 0 0;
+        }
+
+        th:last-child {
+            border-radius: 0 8px 0 0;
+        }
+
+        td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #e1e5e9;
+            vertical-align: top;
+        }
+
+        tr:hover {
+            background: #f8f9ff;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .order-content {
+            max-width: 300px;
+            word-wrap: break-word;
+            font-weight: 500;
+        }
+
+        .order-time {
             font-size: 14px;
-            border-radius: 8px;
-            margin-left: 10px;
-            text-transform: none;
-            letter-spacing: normal;
+            color: #666;
+            min-width: 150px;
         }
 
-        .delete-btn:hover {
-            background: #c82333;
-            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+        .empty-message {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            padding: 40px;
         }
 
         .modal {
@@ -239,18 +160,16 @@
             z-index: 1000;
             justify-content: center;
             align-items: center;
-            flex-direction: column;
-            backdrop-filter: blur(5px);
         }
 
         .modal-content {
-            position: relative;
             background: white;
             border-radius: 20px;
             padding: 30px;
             max-width: 500px;
             width: 90%;
             text-align: center;
+            position: relative;
         }
 
         .modal-close {
@@ -281,7 +200,6 @@
             width: 100%;
             height: 300px;
             object-fit: cover;
-            display: block;
             background: #000;
         }
 
@@ -318,8 +236,37 @@
         #scanStatus {
             color: #667eea;
             font-size: 16px;
-            margin-top: 15px;
+            margin: 15px 0;
             font-weight: 600;
+        }
+
+        .camera-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            background: #28a745;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 5px;
+            transition: all 0.3s ease;
+        }
+
+        .camera-btn:hover {
+            background: #218838;
+        }
+
+        .camera-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .stop-btn {
+            background: #dc3545;
+        }
+
+        .stop-btn:hover {
+            background: #c82333;
         }
 
         .notification {
@@ -341,35 +288,11 @@
         }
 
         .notification.success {
-            background: linear-gradient(135deg, #28a745, #20c997);
+            background: #28a745;
         }
 
         .notification.error {
-            background: linear-gradient(135deg, #dc3545, #fd7e14);
-        }
-
-        .notification.warning {
-            background: linear-gradient(135deg, #ffc107, #fd7e14);
-            color: #333;
-        }
-
-        .notification.info {
-            background: linear-gradient(135deg, #17a2b8, #667eea);
-        }
-
-        .manual-input {
-            margin-top: 20px;
-            padding: 20px;
-            border-top: 2px solid #f0f0f0;
-        }
-
-        .manual-input h5 {
-            margin: 0 0 15px 0;
-            color: #667eea;
-        }
-
-        .manual-input input {
-            margin-bottom: 10px;
+            background: #dc3545;
         }
 
         @media (max-width: 768px) {
@@ -381,230 +304,146 @@
                 padding: 20px;
             }
 
-            h1 {
-                font-size: 24px;
+            table {
+                font-size: 14px;
             }
 
-            .stats {
-                grid-template-columns: 1fr;
+            th, td {
+                padding: 8px 6px;
             }
 
-            .actions {
-                grid-template-columns: 1fr;
-            }
-
-            .order-meta {
-                flex-direction: column;
-                gap: 5px;
-            }
-
-            .order-item {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 10px;
-            }
-
-            .delete-btn {
-                align-self: flex-end;
-                margin-left: 0;
+            .order-content {
+                max-width: 200px;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📦 Quét QR - Lưu Trữ Đơn Hàng</h1>
-        <p class="subtitle">Quản lý đơn hàng thương mại điện tử một cách dễ dàng và hiệu quả</p>
+        <h1>📦 Quét QR - Danh Sách Đơn Hàng</h1>
 
-        <div class="stats">
-            <div class="stat-card">
-                <h3 id="totalOrders">0</h3>
-                <p>Tổng đơn hàng</p>
-            </div>
-            <div class="stat-card">
-                <h3 id="todayOrders">0</h3>
-                <p>Hôm nay</p>
-            </div>
-            <div class="stat-card">
-                <h3 id="totalValue">0đ</h3>
-                <p>Tổng giá trị</p>
-            </div>
-        </div>
+        <button class="scan-button" id="startScanBtn">🔍 Quét QR Code</button>
 
-        <div class="actions">
-            <div class="action-card">
-                <button id="startScan">🔍 Quét QR Code</button>
-                <p style="margin-top: 10px; color: #666; text-align: center;">Quét mã QR để thêm đơn hàng mới</p>
-            </div>
-            <div class="action-card">
-                <input type="text" id="searchInput" placeholder="🔎 Tìm kiếm đơn hàng theo nội dung hoặc thời gian">
-            </div>
-            <div class="action-card">
-                <button id="exportButton">📤 Xuất dữ liệu (CSV)</button>
-                <p style="margin-top: 10px; color: #666; text-align: center;">Tải về file Excel với tất cả đơn hàng</p>
-            </div>
-        </div>
-
-        <div class="order-container" id="orderContainer">
-            <p style="text-align: center; color: #666;">Đang tải dữ liệu...</p>
+        <div id="tablesContainer">
+            <!-- Tables will be generated here -->
         </div>
     </div>
 
-    <div class="modal">
+    <!-- Modal for QR Scanner -->
+    <div class="modal" id="scanModal">
         <div class="modal-content">
-            <span class="modal-close">✕</span>
+            <span class="modal-close" id="closeModal">✕</span>
             <h3>Quét mã QR</h3>
             <div id="videoContainer">
-                <video id="qr-video" autoplay playsinline></video>
+                <video id="qr-video" autoplay playsinline muted></video>
                 <div class="scan-overlay"></div>
             </div>
             <p id="scanStatus">Nhấn nút để bắt đầu quét</p>
-            <button id="startCameraBtn" style="margin-top: 15px;">📷 Bật Camera</button>
-            
-            <div class="manual-input">
-                <h5>Hoặc nhập thủ công:</h5>
-                <input type="text" id="manualContent" placeholder="Nội dung đơn hàng">
-                <input type="number" id="manualPrice" placeholder="Giá trị (VNĐ)">
-                <button onclick="orderManager.addManualOrder()" style="margin-top: 10px;">➕ Thêm đơn hàng</button>
-            </div>
+            <button class="camera-btn" id="startCameraBtn">📷 Bật Camera</button>
+            <button class="camera-btn stop-btn" id="stopCameraBtn" style="display: none;">⏹️ Dừng</button>
         </div>
     </div>
 
     <script>
-        class OrderManager {
+        // Khởi tạo Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyD-MjMnmrCuZhEwacmeXXiTppMB42p9Epg",
+            authDomain: "phu117.firebaseapp.com",
+            projectId: "phu117",
+            storageBucket: "phu117.firebasestorage.app",
+            messagingSenderId: "612585313910",
+            appId: "1:612585313910:web:ae5815ac048f861a4eb157"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        class SimpleOrderScanner {
             constructor() {
                 this.orders = [];
-                this.filteredOrders = [];
-                this.itemsPerPage = 20;
                 this.currentStream = null;
                 this.isScanning = false;
                 this.scanInterval = null;
+                this.itemsPerTable = 10;
+                this.unsubscribe = null;
                 
-                this.initializeApp();
+                this.init();
             }
 
-            async initializeApp() {
-                try {
-                    this.loadOrdersFromStorage();
-                    this.setupEventListeners();
-                    this.renderOrders();
-                    console.log('App initialized successfully');
-                } catch (error) {
-                    console.error('Error initializing app:', error);
-                    this.showNotification('Lỗi khởi tạo ứng dụng', 'error');
-                }
+            init() {
+                this.setupRealtimeListener();
+                this.setupEventListeners();
             }
 
-            // Load orders from localStorage
-            loadOrdersFromStorage() {
-                const savedOrders = JSON.parse(localStorage.getItem('qr_orders') || '[]');
-                this.orders = savedOrders;
-                this.filteredOrders = [...this.orders];
-            }
-
-            // Save orders to localStorage
-            saveOrdersToStorage() {
-                localStorage.setItem('qr_orders', JSON.stringify(this.orders));
-            }
-
-            // Render danh sách đơn hàng
-            renderOrders() {
-                const orderContainer = document.getElementById('orderContainer');
-                orderContainer.innerHTML = '';
-
-                if (this.filteredOrders.length === 0) {
-                    orderContainer.innerHTML = '<p style="text-align: center; color: #666;">Chưa có đơn hàng nào</p>';
-                    this.updateStats();
-                    return;
+            // Thiết lập listener real-time cho Firestore
+            setupRealtimeListener() {
+                if (this.unsubscribe) {
+                    this.unsubscribe();
                 }
 
-                // Sắp xếp theo thời gian mới nhất
-                this.filteredOrders.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-                // Phân trang
-                const totalPages = Math.ceil(this.filteredOrders.length / this.itemsPerPage);
-                
-                for (let page = 0; page < totalPages; page++) {
-                    const start = page * this.itemsPerPage;
-                    const end = start + this.itemsPerPage;
-                    const pageOrders = this.filteredOrders.slice(start, end);
-                    
-                    const orderPage = document.createElement('div');
-                    orderPage.className = 'order-page';
-                    orderPage.innerHTML = `
-                        <h4>Trang ${page + 1} (${pageOrders.length} đơn hàng)</h4>
-                        ${pageOrders.map(order => this.renderOrderItem(order)).join('')}
-                    `;
-                    orderContainer.appendChild(orderPage);
-                }
-
-                this.updateStats();
+                this.unsubscribe = db.collection('orders')
+                    .orderBy('timestamp', 'desc')
+                    .onSnapshot((snapshot) => {
+                        this.orders = snapshot.docs.map(doc => ({ 
+                            id: doc.id, 
+                            ...doc.data() 
+                        }));
+                        this.renderTables();
+                    }, (error) => {
+                        console.error('Error listening to orders:', error);
+                        this.showNotification('Lỗi kết nối database', 'error');
+                    });
             }
 
-            // Render một item đơn hàng
-            renderOrderItem(order) {
-                const date = new Date(order.timestamp);
-                const formattedDate = date.toLocaleString('vi-VN');
-                const value = order.value ? order.value.toLocaleString('vi-VN') + 'đ' : 'N/A';
-                
-                return `
-                    <div class="order-item">
-                        <div class="order-content">
-                            <strong>📦 ${order.content}</strong>
-                            <div class="order-meta">
-                                <span>⏰ ${formattedDate}</span>
-                                <span class="order-value">💰 ${value}</span>
-                            </div>
-                        </div>
-                        <button class="delete-btn" onclick="orderManager.deleteOrder('${order.id}')" title="Xóa đơn hàng">🗑️</button>
-                    </div>
-                `;
-            }
-
-            // Cập nhật thống kê
-            updateStats() {
-                const today = new Date().toDateString();
-                const todayOrders = this.orders.filter(order => {
-                    const orderDate = new Date(order.timestamp).toDateString();
-                    return orderDate === today;
+            setupEventListeners() {
+                document.getElementById('startScanBtn').addEventListener('click', () => {
+                    this.openScanModal();
                 });
 
-                const totalValue = this.orders.reduce((sum, order) => sum + (order.value || 0), 0);
+                document.getElementById('closeModal').addEventListener('click', () => {
+                    this.closeScanModal();
+                });
 
-                document.getElementById('totalOrders').textContent = this.orders.length;
-                document.getElementById('todayOrders').textContent = todayOrders.length;
-                document.getElementById('totalValue').textContent = totalValue.toLocaleString('vi-VN') + 'đ';
+                document.getElementById('startCameraBtn').addEventListener('click', () => {
+                    this.startCamera();
+                });
+
+                document.getElementById('stopCameraBtn').addEventListener('click', () => {
+                    this.stopCamera();
+                });
+
+                document.getElementById('scanModal').addEventListener('click', (e) => {
+                    if (e.target.id === 'scanModal') {
+                        this.closeScanModal();
+                    }
+                });
             }
 
-            // Bắt đầu quét QR
-            startQRScan() {
-                if (this.isScanning) return;
-                
-                const modal = document.querySelector('.modal');
-                modal.style.display = 'flex';
-                
-                document.getElementById('scanStatus').textContent = 'Nhấn nút để bắt đầu quét';
+            openScanModal() {
+                document.getElementById('scanModal').style.display = 'flex';
             }
 
-            // Bật camera và bắt đầu quét
+            closeScanModal() {
+                this.stopCamera();
+                document.getElementById('scanModal').style.display = 'none';
+            }
+
             async startCamera() {
-                if (this.isScanning) return;
-
                 const video = document.getElementById('qr-video');
                 const statusEl = document.getElementById('scanStatus');
                 const startBtn = document.getElementById('startCameraBtn');
+                const stopBtn = document.getElementById('stopCameraBtn');
 
                 try {
                     this.isScanning = true;
-                    startBtn.disabled = true;
+                    startBtn.style.display = 'none';
+                    stopBtn.style.display = 'inline-block';
                     statusEl.textContent = 'Đang khởi động camera...';
 
-                    // Dừng stream cũ nếu có
                     if (this.currentStream) {
                         this.currentStream.getTracks().forEach(track => track.stop());
                     }
 
-                    // Yêu cầu quyền camera
                     const constraints = {
                         video: {
                             facingMode: { ideal: 'environment' },
@@ -616,20 +455,20 @@
                     this.currentStream = await navigator.mediaDevices.getUserMedia(constraints);
                     video.srcObject = this.currentStream;
 
-                    await video.play();
-                    statusEl.textContent = 'Hướng camera vào mã QR để quét';
-
-                    // Bắt đầu quét QR
-                    this.startQRDetection(video);
+                    video.onloadedmetadata = () => {
+                        video.play().then(() => {
+                            statusEl.textContent = 'Hướng camera vào mã QR';
+                            this.startQRDetection(video);
+                        });
+                    };
 
                 } catch (error) {
                     console.error('Camera error:', error);
-                    this.showNotification('Không thể bật camera. Vui lòng kiểm tra quyền truy cập.', 'error');
-                    this.stopQRScan();
+                    this.showNotification('Không thể bật camera', 'error');
+                    this.stopCamera();
                 }
             }
 
-            // Quét QR từ video stream
             startQRDetection(video) {
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
@@ -643,111 +482,40 @@
 
                     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
                     
-                    // Sử dụng jsQR để quét QR code
                     if (window.jsQR) {
                         const code = jsQR(imageData.data, imageData.width, imageData.height);
                         if (code) {
-                            this.handleQrResult(code.data);
+                            this.handleQRResult(code.data);
                         }
                     }
                 }, 100);
             }
 
-            // Xử lý kết quả QR
-            async handleQrResult(qrData) {
+            handleQRResult(qrData) {
                 if (!this.isScanning) return;
 
-                try {
-                    document.getElementById('scanStatus').textContent = 'Đã quét thành công! Đang lưu...';
-                    
-                    // Tạo đơn hàng mới
-                    const newOrder = {
-                        id: Date.now().toString(),
-                        content: qrData,
-                        timestamp: new Date().toISOString(),
-                        value: this.extractValueFromQR(qrData) || 0
-                    };
-
-                    // Thêm vào danh sách
-                    this.orders.unshift(newOrder);
-                    this.filteredOrders = [...this.orders];
-                    
-                    // Lưu vào localStorage
-                    this.saveOrdersToStorage();
-                    
-                    // Render lại
-                    this.renderOrders();
-                    
-                    this.showNotification('Đã thêm đơn hàng thành công!', 'success');
-                    this.stopQRScan();
-                    
-                } catch (error) {
-                    console.error('Error saving order:', error);
-                    this.showNotification('Lỗi lưu đơn hàng', 'error');
-                }
-            }
-
-            // Thêm đơn hàng thủ công
-            addManualOrder() {
-                const content = document.getElementById('manualContent').value.trim();
-                const price = document.getElementById('manualPrice').value;
-
-                if (!content) {
-                    this.showNotification('Vui lòng nhập nội dung đơn hàng', 'warning');
-                    return;
-                }
-
                 const newOrder = {
-                    id: Date.now().toString(),
-                    content: content,
-                    timestamp: new Date().toISOString(),
-                    value: parseInt(price) || 0
+                    content: qrData,
+                    timestamp: new Date().toISOString()
                 };
 
-                this.orders.unshift(newOrder);
-                this.filteredOrders = [...this.orders];
-                this.saveOrdersToStorage();
-                this.renderOrders();
-
-                // Clear form
-                document.getElementById('manualContent').value = '';
-                document.getElementById('manualPrice').value = '';
-
-                this.showNotification('Đã thêm đơn hàng thành công!', 'success');
-                this.stopQRScan();
+                // Lưu vào Firestore
+                db.collection('orders').add(newOrder)
+                    .then(() => {
+                        this.showNotification('Đã thêm đơn hàng!', 'success');
+                        this.closeScanModal();
+                    })
+                    .catch((error) => {
+                        console.error('Error adding order:', error);
+                        this.showNotification('Lỗi lưu đơn hàng', 'error');
+                    });
             }
 
-            // Trích xuất giá trị từ QR code
-            extractValueFromQR(qrData) {
-                const patterns = [
-                    /(\d+)đ/g,
-                    /(\d+)\s*VND/gi,
-                    /amount[:\s]*(\d+)/gi,
-                    /price[:\s]*(\d+)/gi,
-                    /giá[:\s]*(\d+)/gi,
-                    /(\d{1,3}(?:[.,]\d{3})*)/g
-                ];
-
-                for (const pattern of patterns) {
-                    const match = qrData.match(pattern);
-                    if (match) {
-                        const numbers = match[0].replace(/[^\d]/g, '');
-                        if (numbers) {
-                            return parseInt(numbers);
-                        }
-                    }
-                }
-                
-                return 0;
-            }
-
-            // Dừng quét QR
-            stopQRScan() {
+            stopCamera() {
                 this.isScanning = false;
                 
                 if (this.scanInterval) {
                     clearInterval(this.scanInterval);
-                    this.scanInterval = null;
                 }
 
                 if (this.currentStream) {
@@ -758,85 +526,68 @@
                 const video = document.getElementById('qr-video');
                 video.srcObject = null;
 
-                document.querySelector('.modal').style.display = 'none';
-                document.getElementById('startCameraBtn').disabled = false;
+                document.getElementById('startCameraBtn').style.display = 'inline-block';
+                document.getElementById('stopCameraBtn').style.display = 'none';
+                document.getElementById('scanStatus').textContent = 'Nhấn nút để bắt đầu quét';
             }
 
-            // Xóa đơn hàng
-            deleteOrder(orderId) {
-                if (!confirm('Bạn có chắc muốn xóa đơn hàng này?')) return;
+            renderTables() {
+                const container = document.getElementById('tablesContainer');
+                container.innerHTML = '';
 
-                try {
-                    this.orders = this.orders.filter(order => order.id !== orderId);
-                    this.filteredOrders = this.filteredOrders.filter(order => order.id !== orderId);
-                    this.saveOrdersToStorage();
-                    this.renderOrders();
-                    this.showNotification('Đã xóa đơn hàng', 'success');
-                } catch (error) {
-                    console.error('Error deleting order:', error);
-                    this.showNotification('Lỗi xóa đơn hàng', 'error');
-                }
-            }
-
-            // Tìm kiếm đơn hàng
-            searchOrders(keyword) {
-                const searchTerm = keyword.toLowerCase().trim();
-                if (!searchTerm) {
-                    this.filteredOrders = [...this.orders];
-                } else {
-                    this.filteredOrders = this.orders.filter(order => 
-                        order.content.toLowerCase().includes(searchTerm) ||
-                        new Date(order.timestamp).toLocaleString('vi-VN').includes(searchTerm)
-                    );
-                }
-                this.renderOrders();
-            }
-
-            // Xuất CSV
-            exportToCSV() {
                 if (this.orders.length === 0) {
-                    this.showNotification('Không có dữ liệu để xuất', 'warning');
+                    container.innerHTML = '<div class="empty-message">Chưa có đơn hàng nào. Nhấn "Quét QR Code" để bắt đầu.</div>';
                     return;
                 }
 
-                const headers = ['STT', 'Nội dung', 'Thời gian', 'Giá trị (VNĐ)'];
-                const csvData = this.orders.map((order, index) => [
-                    index + 1,
-                    `"${order.content}"`,
-                    `"${new Date(order.timestamp).toLocaleString('vi-VN')}"`,
-                    order.value || 0
-                ]);
+                const totalTables = Math.ceil(this.orders.length / this.itemsPerTable);
 
-                const csvContent = [
-                    headers.join(','),
-                    ...csvData.map(row => row.join(','))
-                ].join('\n');
+                for (let i = 0; i < totalTables; i++) {
+                    const startIndex = i * this.itemsPerTable;
+                    const endIndex = startIndex + this.itemsPerTable;
+                    const tableOrders = this.orders.slice(startIndex, endIndex);
 
-                const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `don-hang-${new Date().toISOString().split('T')[0]}.csv`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
+                    const tableContainer = document.createElement('div');
+                    tableContainer.className = 'table-container';
+                    
+                    tableContainer.innerHTML = `
+                        <div class="table-header">
+                            <div class="table-title">Bảng ${i + 1}</div>
+                            <div class="page-info">${tableOrders.length} đơn hàng</div>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width: 60px;">STT</th>
+                                    <th>Nội dung đơn hàng</th>
+                                    <th style="width: 180px;">Thời gian</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tableOrders.map((order, index) => `
+                                    <tr>
+                                        <td>${startIndex + index + 1}</td>
+                                        <td class="order-content">${order.content}</td>
+                                        <td class="order-time">${new Date(order.timestamp).toLocaleString('vi-VN')}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
 
-                this.showNotification('Đã xuất file CSV thành công', 'success');
+                    container.appendChild(tableContainer);
+                }
             }
 
-            // Hiển thị thông báo
-            showNotification(message, type = 'info') {
+            showNotification(message, type = 'success') {
                 const notification = document.createElement('div');
                 notification.className = `notification ${type}`;
                 notification.textContent = message;
                 
                 document.body.appendChild(notification);
                 
-                setTimeout(() => {
-                    notification.classList.add('show');
-                }, 100);
-
+                setTimeout(() => notification.classList.add('show'), 100);
+                
                 setTimeout(() => {
                     notification.classList.remove('show');
                     setTimeout(() => {
@@ -844,10 +595,30 @@
                             document.body.removeChild(notification);
                         }
                     }, 300);
-                }, 3000);
+                }, 2000);
             }
 
-            // Thiết lập event listeners
-            setupEventListeners() {
-                // Quét QR
-                document.getElementById('startScan').addEventListener('click', () => {
+            // Cleanup khi thoát
+            destroy() {
+                if (this.unsubscribe) {
+                    this.unsubscribe();
+                }
+                this.stopCamera();
+            }
+        }
+
+        // Khởi tạo ứng dụng
+        let scanner;
+        document.addEventListener('DOMContentLoaded', () => {
+            scanner = new SimpleOrderScanner();
+        });
+
+        // Cleanup khi thoát trang
+        window.addEventListener('beforeunload', () => {
+            if (scanner) {
+                scanner.destroy();
+            }
+        });
+    </script>
+</body>
+</html>
