@@ -83,22 +83,72 @@
             padding: 25px;
             margin-bottom: 30px;
             border: 2px dashed #4facfe;
+            text-align: center;
         }
 
         .camera-container {
-            position: relative;
-            max-width: 400px;
-            margin: 0 auto 20px;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .camera-container.active {
+            display: flex;
         }
 
         #qr-video {
             width: 100%;
-            height: 300px;
+            max-width: 500px;
+            height: 400px;
             object-fit: cover;
             background: #000;
+            border-radius: 12px;
+        }
+
+        .qr-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 250px;
+            height: 250px;
+            border: 3px solid #00ff00;
+            border-radius: 12px;
+            box-shadow: 0 0 0 99999px rgba(0,0,0,0.5);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { border-color: #00ff00; }
+            50% { border-color: #ffff00; }
+            100% { border-color: #00ff00; }
+        }
+
+        .camera-controls {
+            position: absolute;
+            bottom: 50px;
+            display: flex;
+            gap: 20px;
+        }
+
+        .scan-instruction {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 1.1rem;
         }
 
         .controls {
@@ -477,6 +527,9 @@
             bindEvents() {
                 this.startBtn.addEventListener('click', () => this.startScanning());
                 this.stopBtn.addEventListener('click', () => this.stopScanning());
+                
+                // Pagination events được handle bằng onclick trong HTML
+                // hoặc có thể bind ở đây nếu muốn
             }
 
             async initializeFirebase() {
@@ -610,6 +663,12 @@
                     const { doc, deleteDoc } = window.firestoreFunctions;
                     await deleteDoc(doc(window.db, 'orders', orderId));
                     
+                    // Kiểm tra nếu trang hiện tại trống sau khi xóa
+                    const totalPages = this.getTotalPages();
+                    if (this.currentPage > totalPages && totalPages > 0) {
+                        this.currentPage = totalPages;
+                    }
+                    
                     this.updateStatus('✅ Đã xóa đơn hàng', 'success');
                 } catch (error) {
                     console.error('Error deleting order:', error);
@@ -622,32 +681,86 @@
                 this.statusDiv.className = `status ${type}`;
             }
 
+            // Pagination methods
+            getTotalPages() {
+                return Math.max(1, Math.ceil(this.allOrders.length / this.ordersPerPage));
+            }
+
+            getCurrentPageOrders() {
+                const startIndex = (this.currentPage - 1) * this.ordersPerPage;
+                const endIndex = startIndex + this.ordersPerPage;
+                return this.allOrders.slice(startIndex, endIndex);
+            }
+
+            nextPage() {
+                const totalPages = this.getTotalPages();
+                if (this.currentPage < totalPages) {
+                    this.currentPage++;
+                    this.updateUI();
+                }
+            }
+
+            previousPage() {
+                if (this.currentPage > 1) {
+                    this.currentPage--;
+                    this.updateUI();
+                }
+            }
+
+            goToPage(page) {
+                const totalPages = this.getTotalPages();
+                if (page >= 1 && page <= totalPages) {
+                    this.currentPage = page;
+                    this.updateUI();
+                }
+            }
+
             updateUI() {
-                this.totalOrdersSpan.textContent = this.orders.length;
+                const totalPages = this.getTotalPages();
+                const currentPageOrders = this.getCurrentPageOrders();
                 
-                if (this.orders.length === 0) {
+                // Cập nhật thông tin tổng quan
+                this.totalOrdersSpan.textContent = this.allOrders.length;
+                this.currentPageDisplay.textContent = this.currentPage;
+                this.totalPagesDisplay.textContent = totalPages;
+                this.pageInfoText.textContent = `Trang ${this.currentPage} / ${totalPages}`;
+                
+                // Hiển thị/ẩn pagination controls
+                if (totalPages > 1) {
+                    this.paginationControls.style.display = 'flex';
+                    this.prevBtn.disabled = this.currentPage === 1;
+                    this.nextBtn.disabled = this.currentPage === totalPages;
+                } else {
+                    this.paginationControls.style.display = 'none';
+                }
+                
+                // Cập nhật bảng với đơn hàng của trang hiện tại
+                if (currentPageOrders.length === 0) {
                     this.ordersTableBody.innerHTML = `
                         <tr>
                             <td colspan="4" class="empty-state">
                                 <div>📦</div>
-                                <p>Chưa có đơn hàng nào được quét</p>
-                                <small>Hãy quét QR code để thêm đơn hàng đầu tiên</small>
+                                <p>${this.allOrders.length === 0 ? 'Chưa có đơn hàng nào được quét' : 'Không có đơn hàng trong trang này'}</p>
+                                <small>${this.allOrders.length === 0 ? 'Hãy quét QR code để thêm đơn hàng đầu tiên' : 'Hãy chuyển về trang khác'}</small>
                             </td>
                         </tr>
                     `;
                 } else {
-                    this.ordersTableBody.innerHTML = this.orders.map((order, index) => `
-                        <tr>
-                            <td>${index + 1}</td>
-                            <td><span class="order-code">${order.code}</span></td>
-                            <td>${order.scannedAt}</td>
-                            <td>
-                                <button class="delete-btn" onclick="orderScanner.deleteOrder('${order.id}')">
-                                    🗑️ Xóa
-                                </button>
-                            </td>
-                        </tr>
-                    `).join('');
+                    this.ordersTableBody.innerHTML = currentPageOrders.map((order, index) => {
+                        const globalIndex = (this.currentPage - 1) * this.ordersPerPage + index + 1;
+                        return `
+                            <tr>
+                                <td>${globalIndex}</td>
+                                <td><span class="order-code">${order.code}</span></td>
+                                <td>${order.scannedAt}</td>
+                                <td>
+                                    <button class="delete-btn" onclick="orderScanner.deleteOrder('${order.id}')">
+                                        🗑️ Xóa
+                                    </button>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
                 }
             }
 
