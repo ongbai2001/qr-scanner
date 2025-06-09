@@ -9,9 +9,11 @@
     <script type="module">
         // Import Firebase functions
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-analytics.js";
         import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, limit, onSnapshot, where, updateDoc, setDoc, Timestamp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-firestore.js";
         
-        // Firebase configuration
+        // Your web app's Firebase configuration
+        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
         const firebaseConfig = {
             apiKey: "AIzaSyD-MjMnmrCuZhEwacmeXXiTppMB42p9Epg",
             authDomain: "phu117.firebaseapp.com",
@@ -24,13 +26,19 @@
 
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
         const db = getFirestore(app);
         
         // Make Firebase available globally
         window.db = db;
+        window.analytics = analytics;
         window.firestoreFunctions = {
             collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, limit, onSnapshot, where, updateDoc, setDoc, Timestamp
         };
+        
+        console.log('🔥 Firebase initialized successfully');
+        console.log('📊 Analytics enabled');
+        console.log('💾 Database connected to project:', firebaseConfig.projectId);
     </script>
     <style>
         * {
@@ -492,7 +500,7 @@
 
                 <!-- Pagination Controls -->
                 <div class="pagination" id="pagination-controls" style="display: none;">
-                    <button class="pagination-btn" id="prev-btn" onclick="orderScanner.previousPage()">
+                    <button class="pagination-btn" id="prev-btn" onclick="productScanner.previousPage()">
                         ⬅️ Trang Trước
                     </button>
                     
@@ -500,7 +508,7 @@
                         <span id="page-info-text">Trang 1 / 1</span>
                     </div>
                     
-                    <button class="pagination-btn" id="next-btn" onclick="orderScanner.nextPage()">
+                    <button class="pagination-btn" id="next-btn" onclick="productScanner.nextPage()">
                         Trang Sau ➡️
                     </button>
                 </div>
@@ -578,29 +586,61 @@
                     // Đợi Firebase được khởi tạo
                     await this.waitForFirebase();
                     
-                    // Thiết lập real-time listener cho sản phẩm hôm nay
-                    const { collection, query, orderBy, where, onSnapshot, Timestamp } = window.firestoreFunctions;
+                    // Thiết lập real-time listener cho orders hôm nay
+                    const { collection, query, orderBy, where, onSnapshot } = window.firestoreFunctions;
                     
                     // Lấy thời gian đầu ngày hôm nay
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
+                    const tomorrow = new Date(today);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
                     
-                    const productsQuery = query(
-                        collection(window.db, 'products'),
-                        where('date', '>=', today),
-                        orderBy('lastScanned', 'desc')
+                    const ordersQuery = query(
+                        collection(window.db, 'orders'),
+                        where('createdAt', '>=', today),
+                        where('createdAt', '<', tomorrow),
+                        orderBy('createdAt', 'desc')
                     );
 
-                    this.unsubscribe = onSnapshot(productsQuery, (snapshot) => {
+                    this.unsubscribe = onSnapshot(ordersQuery, (snapshot) => {
                         console.log('Firebase snapshot received, size:', snapshot.size);
-                        this.allProducts = [];
+                        
+                        // Nhóm các orders theo barcode và đếm số lượng
+                        const productMap = new Map();
+                        
                         snapshot.forEach((doc) => {
                             const data = doc.data();
-                            this.allProducts.push({
-                                id: doc.id,
-                                ...data
-                            });
+                            const barcode = data.barcode || data.code; // Sử dụng barcode hoặc code cũ
+                            
+                            if (productMap.has(barcode)) {
+                                // Tăng số lượng nếu đã có
+                                const existing = productMap.get(barcode);
+                                existing.quantity += 1;
+                                // Cập nhật thời gian quét cuối nếu mới hơn
+                                if (data.createdAt > existing.lastScanned) {
+                                    existing.lastScanned = data.createdAt;
+                                    existing.lastScannedDisplay = data.scannedAt;
+                                    existing.id = doc.id; // Cập nhật ID mới nhất
+                                }
+                            } else {
+                                // Thêm sản phẩm mới
+                                const productName = data.productName || this.productDatabase[barcode] || `Sản phẩm ${barcode}`;
+                                productMap.set(barcode, {
+                                    id: doc.id,
+                                    barcode: barcode,
+                                    productName: productName,
+                                    quantity: 1,
+                                    lastScanned: data.createdAt,
+                                    lastScannedDisplay: data.scannedAt
+                                });
+                            }
                         });
+                        
+                        // Chuyển đổi Map thành Array và sắp xếp theo thời gian quét cuối
+                        this.allProducts = Array.from(productMap.values()).sort((a, b) => 
+                            b.lastScanned - a.lastScanned
+                        );
+                        
                         console.log('Updated allProducts:', this.allProducts.length);
                         this.updateUI();
                     }, (error) => {
@@ -646,6 +686,8 @@
                         {
                             highlightScanRegion: false, // Tắt highlight mặc định vì có custom overlay
                             highlightCodeOutline: true,
+                            preferredCamera: 'environment', // Ưu tiên camera sau
+                            maxScansPerSecond: 5 // Tối ưu cho barcode scanning
                         }
                     );
 
@@ -675,25 +717,36 @@
                 this.updateStatus('⏹️ Đã dừng quét QR code', 'info');
             }
 
-            async handleScanResult(qrData) {
-                if (!qrData || qrData.trim() === '') return;
+            async handleScanResult(barcodeData) {
+                if (!barcodeData || barcodeData.trim() === '') return;
 
                 // Dừng quét ngay lập tức
                 this.stopScanning();
 
-                // Kiểm tra xem mã đã tồn tại chưa
-                if (this.allOrders.some(order => order.code === qrData)) {
-                    this.updateStatus(`⚠️ Mã đơn hàng "${qrData}" đã tồn tại!`, 'error');
-                    return;
-                }
-
                 try {
-                    this.updateStatus('💾 Đang lưu đơn hàng...', 'info');
+                    this.updateStatus('🔍 Đang tra cứu sản phẩm...', 'info');
 
-                    // Thêm đơn hàng vào Firebase
+                    // Tìm tên sản phẩm từ database
+                    let productName = this.productDatabase[barcodeData];
+                    
+                    // Nếu không tìm thấy, cho phép người dùng nhập tên sản phẩm
+                    if (!productName) {
+                        productName = prompt(`Không tìm thấy sản phẩm có mã ${barcodeData}.\nVui lòng nhập tên sản phẩm:`);
+                        if (!productName || productName.trim() === '') {
+                            this.updateStatus('❌ Đã hủy thêm sản phẩm', 'error');
+                            return;
+                        }
+                        // Lưu vào database tạm thời
+                        this.productDatabase[barcodeData] = productName.trim();
+                    }
+
+                    this.updateStatus('📦 Đang thêm vào thống kê...', 'info');
+                    
+                    // Thêm mỗi lần quét như một record mới vào collection orders
                     const { collection, addDoc } = window.firestoreFunctions;
                     const newOrder = {
-                        code: qrData,
+                        barcode: barcodeData,
+                        productName: productName,
                         scannedAt: new Date().toLocaleString('vi-VN'),
                         createdAt: new Date(),
                         userId: 'anonymous'
@@ -701,23 +754,46 @@
 
                     await addDoc(collection(window.db, 'orders'), newOrder);
                     
-                    // Chuyển về trang đầu tiên để thấy đơn hàng mới
+                    // Chuyển về trang đầu tiên để thấy cập nhật
                     this.currentPage = 1;
                     
-                    this.updateStatus(`✅ Đã lưu đơn hàng: ${qrData}`, 'success');
+                    this.updateStatus(`✅ Đã thêm: ${productName}`, 'success');
 
                 } catch (error) {
-                    console.error('Error saving order:', error);
-                    this.updateStatus('❌ Lỗi khi lưu đơn hàng. Vui lòng thử lại.', 'error');
+                    console.error('Error processing barcode:', error);
+                    this.updateStatus('❌ Lỗi khi xử lý barcode. Vui lòng thử lại.', 'error');
                 }
             }
 
-            async deleteOrder(orderId) {
+            async deleteProduct(productBarcode) {
                 try {
-                    this.updateStatus('🗑️ Đang xóa đơn hàng...', 'info');
+                    this.updateStatus('🗑️ Đang xóa tất cả bản ghi sản phẩm...', 'info');
                     
-                    const { doc, deleteDoc } = window.firestoreFunctions;
-                    await deleteDoc(doc(window.db, 'orders', orderId));
+                    const { collection, query, where, getDocs, deleteDoc, doc } = window.firestoreFunctions;
+                    
+                    // Lấy thời gian đầu ngày hôm nay
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const tomorrow = new Date(today);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    
+                    // Tìm tất cả records của sản phẩm này trong ngày
+                    const ordersQuery = query(
+                        collection(window.db, 'orders'),
+                        where('barcode', '==', productBarcode),
+                        where('createdAt', '>=', today),
+                        where('createdAt', '<', tomorrow)
+                    );
+                    
+                    const querySnapshot = await getDocs(ordersQuery);
+                    
+                    // Xóa tất cả records
+                    const deletePromises = [];
+                    querySnapshot.forEach((docSnapshot) => {
+                        deletePromises.push(deleteDoc(doc(window.db, 'orders', docSnapshot.id)));
+                    });
+                    
+                    await Promise.all(deletePromises);
                     
                     // Kiểm tra nếu trang hiện tại trống sau khi xóa
                     const totalPages = this.getTotalPages();
@@ -725,10 +801,10 @@
                         this.currentPage = totalPages;
                     }
                     
-                    this.updateStatus('✅ Đã xóa đơn hàng', 'success');
+                    this.updateStatus(`✅ Đã xóa tất cả ${querySnapshot.size} bản ghi của sản phẩm`, 'success');
                 } catch (error) {
-                    console.error('Error deleting order:', error);
-                    this.updateStatus('❌ Lỗi khi xóa đơn hàng', 'error');
+                    console.error('Error deleting product:', error);
+                    this.updateStatus('❌ Lỗi khi xóa sản phẩm', 'error');
                 }
             }
 
@@ -739,13 +815,13 @@
 
             // Pagination methods
             getTotalPages() {
-                return Math.max(1, Math.ceil(this.allOrders.length / this.ordersPerPage));
+                return Math.max(1, Math.ceil(this.allProducts.length / this.ordersPerPage));
             }
 
             getCurrentPageOrders() {
                 const startIndex = (this.currentPage - 1) * this.ordersPerPage;
                 const endIndex = startIndex + this.ordersPerPage;
-                return this.allOrders.slice(startIndex, endIndex);
+                return this.allProducts.slice(startIndex, endIndex);
             }
 
             nextPage() {
@@ -776,7 +852,7 @@
                 const currentPageOrders = this.getCurrentPageOrders();
                 
                 // Cập nhật thông tin tổng quan
-                this.totalOrdersSpan.textContent = this.allOrders.length;
+                this.totalOrdersSpan.textContent = this.allProducts.length;
                 this.currentPageDisplay.textContent = this.currentPage;
                 this.totalPagesDisplay.textContent = totalPages;
                 this.pageInfoText.textContent = `Trang ${this.currentPage} / ${totalPages}`;
@@ -790,27 +866,29 @@
                     this.paginationControls.style.display = 'none';
                 }
                 
-                // Cập nhật bảng với đơn hàng của trang hiện tại
+                // Cập nhật bảng với sản phẩm của trang hiện tại
                 if (currentPageOrders.length === 0) {
                     this.ordersTableBody.innerHTML = `
                         <tr>
-                            <td colspan="4" class="empty-state">
+                            <td colspan="6" class="empty-state">
                                 <div>📦</div>
-                                <p>${this.allOrders.length === 0 ? 'Chưa có đơn hàng nào được quét' : 'Không có đơn hàng trong trang này'}</p>
-                                <small>${this.allOrders.length === 0 ? 'Hãy quét QR code để thêm đơn hàng đầu tiên' : 'Hãy chuyển về trang khác'}</small>
+                                <p>${this.allProducts.length === 0 ? 'Chưa có sản phẩm nào được quét hôm nay' : 'Không có sản phẩm trong trang này'}</p>
+                                <small>${this.allProducts.length === 0 ? 'Hãy quét barcode để thêm sản phẩm đầu tiên' : 'Hãy chuyển về trang khác'}</small>
                             </td>
                         </tr>
                     `;
                 } else {
-                    this.ordersTableBody.innerHTML = currentPageOrders.map((order, index) => {
+                    this.ordersTableBody.innerHTML = currentPageOrders.map((product, index) => {
                         const globalIndex = (this.currentPage - 1) * this.ordersPerPage + index + 1;
                         return `
                             <tr>
                                 <td>${globalIndex}</td>
-                                <td><span class="order-code">${order.code}</span></td>
-                                <td>${order.scannedAt}</td>
+                                <td><strong style="color: #4facfe;">${product.productName}</strong></td>
+                                <td><span class="order-code">${product.barcode}</span></td>
+                                <td><span style="background: #28a745; color: white; padding: 4px 12px; border-radius: 12px; font-weight: bold;">${product.quantity}</span></td>
+                                <td>${product.lastScannedDisplay}</td>
                                 <td>
-                                    <button class="delete-btn" onclick="orderScanner.deleteOrder('${order.id}')">
+                                    <button class="delete-btn" onclick="productScanner.deleteProduct('${product.barcode}')">
                                         🗑️ Xóa
                                     </button>
                                 </td>
@@ -833,25 +911,25 @@
         }
 
         // Khởi tạo ứng dụng
-        let orderScanner;
+        let productScanner;
         
         // Đợi DOM được load
         document.addEventListener('DOMContentLoaded', () => {
-            orderScanner = new OrderScanner();
+            productScanner = new ProductScanner();
         });
 
         // Cleanup khi thoát trang
         window.addEventListener('beforeunload', () => {
-            if (orderScanner) {
-                orderScanner.destroy();
+            if (productScanner) {
+                productScanner.destroy();
             }
         });
 
         // Xử lý lỗi camera
         window.addEventListener('error', (event) => {
             if (event.message && event.message.includes('camera')) {
-                if (orderScanner) {
-                    orderScanner.updateStatus('❌ Lỗi camera: Vui lòng cho phép truy cập camera và tải lại trang', 'error');
+                if (productScanner) {
+                    productScanner.updateStatus('❌ Lỗi camera: Vui lòng cho phép truy cập camera và tải lại trang', 'error');
                 }
             }
         });
