@@ -126,12 +126,26 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 250px;
-            height: 250px;
+            width: 300px;
+            height: 100px; /* Thấp hơn cho barcode */
             border: 3px solid #00ff00;
-            border-radius: 12px;
+            border-radius: 8px;
             box-shadow: 0 0 0 99999px rgba(0,0,0,0.5);
             animation: pulse 2s infinite;
+        }
+
+        .qr-overlay::before {
+            content: "BARCODE";
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #00ff00;
+            font-size: 14px;
+            font-weight: bold;
+            background: rgba(0,0,0,0.7);
+            padding: 4px 8px;
+            border-radius: 4px;
         }
 
         @keyframes pulse {
@@ -687,7 +701,19 @@
                             highlightScanRegion: false, // Tắt highlight mặc định vì có custom overlay
                             highlightCodeOutline: true,
                             preferredCamera: 'environment', // Ưu tiên camera sau
-                            maxScansPerSecond: 5 // Tối ưu cho barcode scanning
+                            maxScansPerSecond: 3, // Giảm tần số để ổn định hơn
+                            returnDetailedScanResult: false,
+                            // Cấu hình cho barcode scanning
+                            calculateScanRegion: (video) => {
+                                const smallestDimension = Math.min(video.videoWidth, video.videoHeight);
+                                const scanRegionSize = Math.round(2/3 * smallestDimension);
+                                return {
+                                    x: Math.round((video.videoWidth - scanRegionSize) / 2),
+                                    y: Math.round((video.videoHeight - scanRegionSize) / 2),
+                                    width: scanRegionSize,
+                                    height: Math.round(scanRegionSize / 3) // Chiều cao nhỏ hơn cho barcode
+                                };
+                            }
                         }
                     );
 
@@ -766,45 +792,67 @@
             }
 
             async deleteProduct(productBarcode) {
+                if (!confirm(`Bạn có chắc muốn xóa tất cả bản ghi của sản phẩm có mã ${productBarcode}?`)) {
+                    return;
+                }
+
                 try {
-                    this.updateStatus('🗑️ Đang xóa tất cả bản ghi sản phẩm...', 'info');
+                    this.updateStatus('🗑️ Đang xóa sản phẩm...', 'info');
                     
                     const { collection, query, where, getDocs, deleteDoc, doc } = window.firestoreFunctions;
                     
-                    // Lấy thời gian đầu ngày hôm nay
+                    // Lấy thời gian đầu và cuối ngày hôm nay
                     const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    const tomorrow = new Date(today);
-                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    const startOfDay = new Date(today);
+                    startOfDay.setHours(0, 0, 0, 0);
+                    
+                    const endOfDay = new Date(today);
+                    endOfDay.setHours(23, 59, 59, 999);
+                    
+                    console.log('Deleting products with barcode:', productBarcode);
+                    console.log('Date range:', startOfDay, 'to', endOfDay);
                     
                     // Tìm tất cả records của sản phẩm này trong ngày
                     const ordersQuery = query(
                         collection(window.db, 'orders'),
                         where('barcode', '==', productBarcode),
-                        where('createdAt', '>=', today),
-                        where('createdAt', '<', tomorrow)
+                        where('createdAt', '>=', startOfDay),
+                        where('createdAt', '<=', endOfDay)
                     );
                     
                     const querySnapshot = await getDocs(ordersQuery);
+                    console.log('Found records to delete:', querySnapshot.size);
                     
-                    // Xóa tất cả records
-                    const deletePromises = [];
-                    querySnapshot.forEach((docSnapshot) => {
-                        deletePromises.push(deleteDoc(doc(window.db, 'orders', docSnapshot.id)));
-                    });
-                    
-                    await Promise.all(deletePromises);
-                    
-                    // Kiểm tra nếu trang hiện tại trống sau khi xóa
-                    const totalPages = this.getTotalPages();
-                    if (this.currentPage > totalPages && totalPages > 0) {
-                        this.currentPage = totalPages;
+                    if (querySnapshot.empty) {
+                        this.updateStatus('⚠️ Không tìm thấy bản ghi nào để xóa', 'error');
+                        return;
                     }
                     
-                    this.updateStatus(`✅ Đã xóa tất cả ${querySnapshot.size} bản ghi của sản phẩm`, 'success');
+                    // Xóa từng record một cách tuần tự
+                    let deletedCount = 0;
+                    for (const docSnapshot of querySnapshot.docs) {
+                        try {
+                            await deleteDoc(doc(window.db, 'orders', docSnapshot.id));
+                            deletedCount++;
+                        } catch (error) {
+                            console.error('Error deleting document:', docSnapshot.id, error);
+                        }
+                    }
+                    
+                    // Kiểm tra nếu trang hiện tại trống sau khi xóa
+                    setTimeout(() => {
+                        const totalPages = this.getTotalPages();
+                        if (this.currentPage > totalPages && totalPages > 0) {
+                            this.currentPage = totalPages;
+                            this.updateUI();
+                        }
+                    }, 1000);
+                    
+                    this.updateStatus(`✅ Đã xóa ${deletedCount} bản ghi của sản phẩm`, 'success');
+                    
                 } catch (error) {
                     console.error('Error deleting product:', error);
-                    this.updateStatus('❌ Lỗi khi xóa sản phẩm', 'error');
+                    this.updateStatus(`❌ Lỗi khi xóa sản phẩm: ${error.message}`, 'error');
                 }
             }
 
