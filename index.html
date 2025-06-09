@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quét QR Đơn Hàng</title>
+    <title>Quét Barcode Thống Kê Hàng Hóa</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner.umd.min.js"></script>
     <!-- Firebase SDKs -->
     <script type="module">
         // Import Firebase functions
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, limit, onSnapshot, where, updateDoc, setDoc, Timestamp } from "https://www.gstatic.com/firebasejs/11.8.1/firebase-firestore.js";
         
         // Firebase configuration
         const firebaseConfig = {
@@ -29,7 +29,7 @@
         // Make Firebase available globally
         window.db = db;
         window.firestoreFunctions = {
-            collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, limit, onSnapshot
+            collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, limit, onSnapshot, where, updateDoc, setDoc, Timestamp
         };
     </script>
     <style>
@@ -420,23 +420,20 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📱 Quét QR Đơn Hàng</h1>
-            <p>Quét mã QR để lưu trữ thông tin đơn hàng thương mại điện tử</p>
+            <h1>📊 Thống Kê Hàng Hóa</h1>
+            <p>Quét mã barcode để thống kê số lượng sản phẩm xuất ra trong ngày</p>
         </div>
 
         <div class="main-content">
             <div class="scanner-section">
-                <div class="camera-container">
-                    <video id="qr-video"></video>
-                </div>
+                <h3 style="margin-bottom: 20px; color: #667eea;">📱 Quét Mã Barcode Sản Phẩm</h3>
                 
                 <div class="controls">
-                    <button id="start-btn" class="btn">📷 Bắt Đầu Quét</button>
-                    <button id="stop-btn" class="btn btn-danger" disabled>⏹️ Dừng Quét</button>
+                    <button id="start-btn" class="btn">📷 Bắt Đầu Quét Barcode</button>
                 </div>
 
                 <div id="status" class="status info">
-                    Nhấn "Bắt Đầu Quét" để sử dụng camera quét QR code
+                    Nhấn "Bắt Đầu Quét Barcode" để bắt đầu thống kê sản phẩm
                 </div>
 
                 <div id="firebase-status" class="firebase-status connecting">
@@ -445,11 +442,27 @@
                 </div>
             </div>
 
+            <!-- Fullscreen Camera Overlay -->
+            <div class="camera-container" id="camera-container">
+                <div class="scan-instruction">
+                    🎯 Hướng camera vào mã barcode để quét sản phẩm
+                </div>
+                
+                <div style="position: relative;">
+                    <video id="qr-video"></video>
+                    <div class="qr-overlay"></div>
+                </div>
+                
+                <div class="camera-controls">
+                    <button id="stop-btn" class="btn btn-danger">❌ Dừng Quét</button>
+                </div>
+            </div>
+
             <div class="table-section">
                 <div class="table-header">
-                    <h2>📋 Danh Sách Đơn Hàng</h2>
+                    <h2>📊 Thống Kê Sản Phẩm Hôm Nay</h2>
                     <div class="order-count">
-                        Tổng: <span id="total-orders">0</span> đơn | Trang: <span id="current-page-display">1</span>/<span id="total-pages-display">1</span>
+                        Tổng SP: <span id="total-orders">0</span> loại | Trang: <span id="current-page-display">1</span>/<span id="total-pages-display">1</span>
                     </div>
                 </div>
                 
@@ -458,17 +471,19 @@
                         <thead>
                             <tr>
                                 <th>STT</th>
-                                <th>Mã Đơn Hàng</th>
-                                <th>Thời Gian Quét</th>
+                                <th>Tên Sản Phẩm</th>
+                                <th>Mã Barcode</th>
+                                <th>Số Lượng</th>
+                                <th>Lần Cuối Quét</th>
                                 <th>Thao Tác</th>
                             </tr>
                         </thead>
                         <tbody id="orders-tbody">
                             <tr>
-                                <td colspan="4" class="empty-state">
+                                <td colspan="6" class="empty-state">
                                     <div>📦</div>
-                                    <p>Chưa có đơn hàng nào được quét</p>
-                                    <small>Hãy quét QR code để thêm đơn hàng đầu tiên</small>
+                                    <p>Chưa có sản phẩm nào được quét hôm nay</p>
+                                    <small>Hãy quét barcode để thêm sản phẩm đầu tiên</small>
                                 </td>
                             </tr>
                         </tbody>
@@ -494,14 +509,28 @@
     </div>
 
     <script>
-        class OrderScanner {
+        class ProductScanner {
             constructor() {
-                this.allOrders = []; // Tất cả đơn hàng
+                this.allProducts = []; // Tất cả sản phẩm được quét
                 this.currentPage = 1;
                 this.ordersPerPage = 10;
                 this.scanner = null;
                 this.isScanning = false;
                 this.unsubscribe = null;
+                
+                // Mock database sản phẩm
+                this.productDatabase = {
+                    '8934673123456': 'Nồi Cơm Điện Tefal 1.8L',
+                    '8934673654321': 'Máy Xay Sinh Tố Philips',
+                    '8934673789012': 'Ấm Đun Nước Điện Elmich',
+                    '8934673345678': 'Chảo Chống Dính Tefal 28cm',
+                    '8934673901234': 'Bếp Gas Đôi Rinnai',
+                    '8934673567890': 'Máy Ép Trái Cây Panasonic',
+                    '8934673234567': 'Nồi Áp Suất Supor 5L',
+                    '8934673678901': 'Lò Vi Sóng Sharp 20L',
+                    '8934673456789': 'Máy Lọc Nước Karofi',
+                    '8934673812345': 'Tủ Lạnh Mini Aqua 90L'
+                };
                 
                 this.initializeElements();
                 this.bindEvents();
@@ -510,6 +539,7 @@
 
             initializeElements() {
                 this.videoElement = document.getElementById('qr-video');
+                this.cameraContainer = document.getElementById('camera-container');
                 this.startBtn = document.getElementById('start-btn');
                 this.stopBtn = document.getElementById('stop-btn');
                 this.statusDiv = document.getElementById('status');
@@ -528,8 +558,19 @@
                 this.startBtn.addEventListener('click', () => this.startScanning());
                 this.stopBtn.addEventListener('click', () => this.stopScanning());
                 
-                // Pagination events được handle bằng onclick trong HTML
-                // hoặc có thể bind ở đây nếu muốn
+                // ESC key để đóng camera
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && this.isScanning) {
+                        this.stopScanning();
+                    }
+                });
+                
+                // Click outside camera area để đóng
+                this.cameraContainer.addEventListener('click', (e) => {
+                    if (e.target === this.cameraContainer) {
+                        this.stopScanning();
+                    }
+                });
             }
 
             async initializeFirebase() {
@@ -537,22 +578,34 @@
                     // Đợi Firebase được khởi tạo
                     await this.waitForFirebase();
                     
-                    // Thiết lập real-time listener - lấy tất cả orders
-                    const { collection, query, orderBy, onSnapshot } = window.firestoreFunctions;
-                    const ordersQuery = query(
-                        collection(window.db, 'orders'),
-                        orderBy('createdAt', 'desc')
+                    // Thiết lập real-time listener cho sản phẩm hôm nay
+                    const { collection, query, orderBy, where, onSnapshot, Timestamp } = window.firestoreFunctions;
+                    
+                    // Lấy thời gian đầu ngày hôm nay
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    
+                    const productsQuery = query(
+                        collection(window.db, 'products'),
+                        where('date', '>=', today),
+                        orderBy('lastScanned', 'desc')
                     );
 
-                    this.unsubscribe = onSnapshot(ordersQuery, (snapshot) => {
-                        this.allOrders = [];
+                    this.unsubscribe = onSnapshot(productsQuery, (snapshot) => {
+                        console.log('Firebase snapshot received, size:', snapshot.size);
+                        this.allProducts = [];
                         snapshot.forEach((doc) => {
-                            this.allOrders.push({
+                            const data = doc.data();
+                            this.allProducts.push({
                                 id: doc.id,
-                                ...doc.data()
+                                ...data
                             });
                         });
+                        console.log('Updated allProducts:', this.allProducts.length);
                         this.updateUI();
+                    }, (error) => {
+                        console.error('Firebase listener error:', error);
+                        this.updateFirebaseStatus('❌ Lỗi lắng nghe Firebase', 'error');
                     });
 
                     this.updateFirebaseStatus('🟢 Đã kết nối Firebase', 'connected');
@@ -584,11 +637,14 @@
                 try {
                     this.updateStatus('Đang khởi động camera...', 'info');
                     
+                    // Hiển thị camera fullscreen
+                    this.cameraContainer.classList.add('active');
+                    
                     this.scanner = new QrScanner(
                         this.videoElement,
                         (result) => this.handleScanResult(result.data),
                         {
-                            highlightScanRegion: true,
+                            highlightScanRegion: false, // Tắt highlight mặc định vì có custom overlay
                             highlightCodeOutline: true,
                         }
                     );
@@ -596,12 +652,11 @@
                     await this.scanner.start();
                     this.isScanning = true;
                     this.startBtn.disabled = true;
-                    this.stopBtn.disabled = false;
-                    this.updateStatus('🎯 Đang quét... Hướng camera về phía mã QR', 'info');
                     
                 } catch (error) {
                     console.error('Error starting scanner:', error);
                     this.updateStatus('❌ Lỗi: Không thể truy cập camera. Vui lòng kiểm tra quyền truy cập.', 'error');
+                    this.cameraContainer.classList.remove('active');
                 }
             }
 
@@ -613,12 +668,18 @@
                 }
                 this.isScanning = false;
                 this.startBtn.disabled = false;
-                this.stopBtn.disabled = true;
+                
+                // Ẩn camera overlay
+                this.cameraContainer.classList.remove('active');
+                
                 this.updateStatus('⏹️ Đã dừng quét QR code', 'info');
             }
 
             async handleScanResult(qrData) {
                 if (!qrData || qrData.trim() === '') return;
+
+                // Dừng quét ngay lập tức
+                this.stopScanning();
 
                 // Kiểm tra xem mã đã tồn tại chưa
                 if (this.allOrders.some(order => order.code === qrData)) {
@@ -635,20 +696,15 @@
                         code: qrData,
                         scannedAt: new Date().toLocaleString('vi-VN'),
                         createdAt: new Date(),
-                        userId: 'anonymous' // Có thể thêm authentication sau
+                        userId: 'anonymous'
                     };
 
                     await addDoc(collection(window.db, 'orders'), newOrder);
                     
-                    this.updateStatus(`✅ Đã lưu đơn hàng: ${qrData}`, 'success');
-
-                    // Tự động dừng quét ngay sau khi thành công
-                    if (this.isScanning) {
-                        this.stopScanning();
-                    }
-
                     // Chuyển về trang đầu tiên để thấy đơn hàng mới
                     this.currentPage = 1;
+                    
+                    this.updateStatus(`✅ Đã lưu đơn hàng: ${qrData}`, 'success');
 
                 } catch (error) {
                     console.error('Error saving order:', error);
