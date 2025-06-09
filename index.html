@@ -126,26 +126,41 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 300px;
-            height: 100px; /* Thấp hơn cho barcode */
+            width: 280px;
+            height: 280px;
             border: 3px solid #00ff00;
-            border-radius: 8px;
+            border-radius: 12px;
             box-shadow: 0 0 0 99999px rgba(0,0,0,0.5);
             animation: pulse 2s infinite;
         }
 
         .qr-overlay::before {
-            content: "BARCODE";
+            content: "QR / BARCODE";
             position: absolute;
-            top: -30px;
+            top: -35px;
             left: 50%;
             transform: translateX(-50%);
             color: #00ff00;
             font-size: 14px;
             font-weight: bold;
+            background: rgba(0,0,0,0.8);
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid #00ff00;
+        }
+
+        .qr-overlay::after {
+            content: "Giữ ổn định trong khung";
+            position: absolute;
+            bottom: -35px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: 12px;
             background: rgba(0,0,0,0.7);
             padding: 4px 8px;
             border-radius: 4px;
+            white-space: nowrap;
         }
 
         @keyframes pulse {
@@ -442,20 +457,21 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📊 Thống Kê Hàng Hóa</h1>
-            <p>Quét mã barcode để thống kê số lượng sản phẩm xuất ra trong ngày</p>
+            <h1>📊 Thống Kê Hàng Hóa Pro</h1>
+            <p>Quét mã vạch (barcode) hoặc QR code để thống kê sản phẩm xuất ra</p>
         </div>
 
         <div class="main-content">
             <div class="scanner-section">
-                <h3 style="margin-bottom: 20px; color: #667eea;">📱 Quét Mã Barcode Sản Phẩm</h3>
+                <h3 style="margin-bottom: 20px; color: #667eea;">📱 Quét Mã Vạch / QR Code</h3>
                 
                 <div class="controls">
-                    <button id="start-btn" class="btn">📷 Bắt Đầu Quét Barcode</button>
+                    <button id="start-btn" class="btn">📷 Bắt Đầu Quét</button>
+                    <button id="test-camera-btn" class="btn" style="background: linear-gradient(135deg, #ffa726 0%, #ff7043 100%);">🔧 Test Camera</button>
                 </div>
 
                 <div id="status" class="status info">
-                    Nhấn "Bắt Đầu Quét Barcode" để bắt đầu thống kê sản phẩm
+                    Nhấn "Bắt Đầu Quét" để quét mã vạch hoặc QR code
                 </div>
 
                 <div id="firebase-status" class="firebase-status connecting">
@@ -467,7 +483,7 @@
             <!-- Fullscreen Camera Overlay -->
             <div class="camera-container" id="camera-container">
                 <div class="scan-instruction">
-                    🎯 Hướng camera vào mã barcode để quét sản phẩm
+                    📊 Quét mã vạch (barcode) hoặc QR code để thống kê
                 </div>
                 
                 <div style="position: relative;">
@@ -477,6 +493,7 @@
                 
                 <div class="camera-controls">
                     <button id="stop-btn" class="btn btn-danger">❌ Dừng Quét</button>
+                    <button id="torch-btn" class="btn" style="background: linear-gradient(135deg, #ffc107 0%, #ff8f00 100%);">💡 Bật Đèn</button>
                 </div>
             </div>
 
@@ -540,18 +557,23 @@
                 this.isScanning = false;
                 this.unsubscribe = null;
                 
-                // Mock database sản phẩm
+                // Mock database sản phẩm với mã barcode thực tế
                 this.productDatabase = {
-                    '8934673123456': 'Nồi Cơm Điện Tefal 1.8L',
-                    '8934673654321': 'Máy Xay Sinh Tố Philips',
-                    '8934673789012': 'Ấm Đun Nước Điện Elmich',
-                    '8934673345678': 'Chảo Chống Dính Tefal 28cm',
-                    '8934673901234': 'Bếp Gas Đôi Rinnai',
-                    '8934673567890': 'Máy Ép Trái Cây Panasonic',
-                    '8934673234567': 'Nồi Áp Suất Supor 5L',
-                    '8934673678901': 'Lò Vi Sóng Sharp 20L',
-                    '8934673456789': 'Máy Lọc Nước Karofi',
-                    '8934673812345': 'Tủ Lạnh Mini Aqua 90L'
+                    // Mã vạch thực tế của các sản phẩm gia dụng
+                    '8936036011215': 'Nồi Cơm Điện Tefal 1.8L',
+                    '8936036011222': 'Máy Xay Sinh Tố Philips HR2118',
+                    '8936036011239': 'Ấm Đun Nước Điện Elmich 1.7L',
+                    '8936036011246': 'Chảo Chống Dính Tefal 28cm',
+                    '8936036011253': 'Bếp Gas Đôi Rinnai RV-365(G)',
+                    '8936036011260': 'Máy Ép Trái Cây Panasonic MJ-DJ31',
+                    '8936036011277': 'Nồi Áp Suất Supor 5L',
+                    '8936036011284': 'Lò Vi Sóng Sharp R-G223VN 20L',
+                    '8936036011291': 'Máy Lọc Nước Karofi KAQ-X16',
+                    '8936036011307': 'Tủ Lạnh Mini Aqua 90L AQR-D99FA',
+                    // Thêm một số barcode ngắn phổ biến
+                    '1234567890123': 'Sản phẩm Test 1',
+                    '9876543210987': 'Sản phẩm Test 2',
+                    '1111111111111': 'Sản phẩm Test 3'
                 };
                 
                 this.initializeElements();
@@ -564,6 +586,8 @@
                 this.cameraContainer = document.getElementById('camera-container');
                 this.startBtn = document.getElementById('start-btn');
                 this.stopBtn = document.getElementById('stop-btn');
+                this.testCameraBtn = document.getElementById('test-camera-btn');
+                this.torchBtn = document.getElementById('torch-btn');
                 this.statusDiv = document.getElementById('status');
                 this.firebaseStatusDiv = document.getElementById('firebase-status');
                 this.ordersTableBody = document.getElementById('orders-tbody');
@@ -574,11 +598,14 @@
                 this.prevBtn = document.getElementById('prev-btn');
                 this.nextBtn = document.getElementById('next-btn');
                 this.pageInfoText = document.getElementById('page-info-text');
+                this.torchEnabled = false;
             }
 
             bindEvents() {
                 this.startBtn.addEventListener('click', () => this.startScanning());
                 this.stopBtn.addEventListener('click', () => this.stopScanning());
+                this.testCameraBtn.addEventListener('click', () => this.testCamera());
+                this.torchBtn.addEventListener('click', () => this.toggleTorch());
                 
                 // ESC key để đóng camera
                 document.addEventListener('keydown', (e) => {
@@ -593,6 +620,76 @@
                         this.stopScanning();
                     }
                 });
+            }
+
+            async testCamera() {
+                try {
+                    this.updateStatus('🔧 Đang test camera...', 'info');
+                    
+                    // Test camera permissions
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { 
+                            facingMode: 'environment',
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        } 
+                    });
+                    
+                    // Test successful
+                    this.updateStatus('✅ Camera hoạt động tốt! Có thể quét được.', 'success');
+                    
+                    // Stop test stream
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    // Show camera info
+                    const videoTrack = stream.getVideoTracks()[0];
+                    const settings = videoTrack.getSettings();
+                    console.log('Camera settings:', settings);
+                    
+                } catch (error) {
+                    console.error('Camera test failed:', error);
+                    let errorMsg = '❌ Test camera thất bại: ';
+                    
+                    if (error.name === 'NotAllowedError') {
+                        errorMsg += 'Chưa cấp quyền camera';
+                    } else if (error.name === 'NotFoundError') {
+                        errorMsg += 'Không tìm thấy camera';
+                    } else {
+                        errorMsg += error.message;
+                    }
+                    
+                    this.updateStatus(errorMsg, 'error');
+                }
+            }
+
+            async toggleTorch() {
+                try {
+                    if (!this.scanner || !this.isScanning) {
+                        this.updateStatus('⚠️ Vui lòng bật camera trước', 'error');
+                        return;
+                    }
+
+                    const stream = this.videoElement.srcObject;
+                    if (stream) {
+                        const videoTrack = stream.getVideoTracks()[0];
+                        const capabilities = videoTrack.getCapabilities();
+                        
+                        if (capabilities.torch) {
+                            this.torchEnabled = !this.torchEnabled;
+                            await videoTrack.applyConstraints({
+                                advanced: [{ torch: this.torchEnabled }]
+                            });
+                            
+                            this.torchBtn.textContent = this.torchEnabled ? '🔦 Tắt Đèn' : '💡 Bật Đèn';
+                            this.updateStatus(`💡 Đèn flash đã ${this.torchEnabled ? 'bật' : 'tắt'}`, 'info');
+                        } else {
+                            this.updateStatus('⚠️ Thiết bị không hỗ trợ đèn flash', 'error');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Torch toggle error:', error);
+                    this.updateStatus('❌ Không thể điều khiển đèn flash', 'error');
+                }
             }
 
             async initializeFirebase() {
@@ -689,42 +786,116 @@
 
             async startScanning() {
                 try {
-                    this.updateStatus('Đang khởi động camera...', 'info');
+                    this.updateStatus('Đang kiểm tra camera...', 'info');
                     
+                    // Kiểm tra camera trước khi bắt đầu
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        throw new Error('Camera không được hỗ trợ trên trình duyệt này');
+                    }
+
                     // Hiển thị camera fullscreen
                     this.cameraContainer.classList.add('active');
                     
+                    this.updateStatus('Đang khởi động camera...', 'info');
+                    
+                    // Cấu hình scanner với các tùy chọn tối ưu
                     this.scanner = new QrScanner(
                         this.videoElement,
-                        (result) => this.handleScanResult(result.data),
+                        (result) => {
+                            console.log('Scan result:', result);
+                            this.handleScanResult(result.data || result);
+                        },
                         {
-                            highlightScanRegion: false, // Tắt highlight mặc định vì có custom overlay
+                            // Cấu hình cơ bản
+                            returnDetailedScanResult: true,
+                            highlightScanRegion: true,
                             highlightCodeOutline: true,
-                            preferredCamera: 'environment', // Ưu tiên camera sau
-                            maxScansPerSecond: 3, // Giảm tần số để ổn định hơn
-                            returnDetailedScanResult: false,
-                            // Cấu hình cho barcode scanning
+                            
+                            // Cấu hình camera
+                            preferredCamera: 'environment',
+                            maxScansPerSecond: 3,
+                            
+                            // Cấu hình scan region
                             calculateScanRegion: (video) => {
-                                const smallestDimension = Math.min(video.videoWidth, video.videoHeight);
-                                const scanRegionSize = Math.round(2/3 * smallestDimension);
+                                const size = Math.min(video.videoWidth, video.videoHeight);
+                                const regionSize = Math.round(0.8 * size);
                                 return {
-                                    x: Math.round((video.videoWidth - scanRegionSize) / 2),
-                                    y: Math.round((video.videoHeight - scanRegionSize) / 2),
-                                    width: scanRegionSize,
-                                    height: Math.round(scanRegionSize / 3) // Chiều cao nhỏ hơn cho barcode
+                                    x: Math.round((video.videoWidth - regionSize) / 2),
+                                    y: Math.round((video.videoHeight - regionSize) / 2),
+                                    width: regionSize,
+                                    height: regionSize
                                 };
+                            },
+                            
+                            // Callback khi có lỗi
+                            onDecodeError: (error) => {
+                                // Silent error để không spam console
+                                if (error.name !== 'NotFoundException') {
+                                    console.log('Decode error:', error);
+                                }
                             }
                         }
                     );
 
+                    // Thêm event listeners cho scanner
+                    this.scanner._onPlay = () => {
+                        console.log('Camera started successfully');
+                        this.updateStatus('📱 Camera sẵn sàng - Hướng vào mã để quét', 'success');
+                    };
+
+                    // Bắt đầu scanner
                     await this.scanner.start();
+                    
                     this.isScanning = true;
                     this.startBtn.disabled = true;
                     
+                    // Thử cải thiện focus
+                    setTimeout(() => {
+                        this.optimizeCamera();
+                    }, 1000);
+                    
                 } catch (error) {
                     console.error('Error starting scanner:', error);
-                    this.updateStatus('❌ Lỗi: Không thể truy cập camera. Vui lòng kiểm tra quyền truy cập.', 'error');
+                    let errorMessage = '❌ Lỗi khởi động camera: ';
+                    
+                    if (error.name === 'NotAllowedError') {
+                        errorMessage += 'Vui lòng cho phép truy cập camera';
+                    } else if (error.name === 'NotFoundError') {
+                        errorMessage += 'Không tìm thấy camera';
+                    } else if (error.name === 'NotSupportedError') {
+                        errorMessage += 'Camera không được hỗ trợ';
+                    } else {
+                        errorMessage += error.message || 'Lỗi không xác định';
+                    }
+                    
+                    this.updateStatus(errorMessage, 'error');
                     this.cameraContainer.classList.remove('active');
+                }
+            }
+
+            async optimizeCamera() {
+                try {
+                    if (!this.scanner || !this.scanner._video) return;
+                    
+                    const video = this.scanner._video;
+                    const stream = video.srcObject;
+                    
+                    if (stream) {
+                        const videoTrack = stream.getVideoTracks()[0];
+                        if (videoTrack) {
+                            // Tối ưu camera settings
+                            await videoTrack.applyConstraints({
+                                focusMode: 'continuous',
+                                exposureMode: 'continuous',
+                                whiteBalanceMode: 'continuous',
+                                zoom: 1.0
+                            }).catch(err => console.log('Camera optimization failed:', err));
+                            
+                            console.log('Camera optimized for scanning');
+                        }
+                    }
+                } catch (error) {
+                    console.log('Camera optimization error:', error);
                 }
             }
 
@@ -737,57 +908,104 @@
                 this.isScanning = false;
                 this.startBtn.disabled = false;
                 
+                // Reset torch
+                this.torchEnabled = false;
+                this.torchBtn.textContent = '💡 Bật Đèn';
+                
                 // Ẩn camera overlay
                 this.cameraContainer.classList.remove('active');
                 
-                this.updateStatus('⏹️ Đã dừng quét QR code', 'info');
+                this.updateStatus('⏹️ Đã dừng quét', 'info');
+                console.log('Scanner stopped');
             }
 
-            async handleScanResult(barcodeData) {
-                if (!barcodeData || barcodeData.trim() === '') return;
+            async handleScanResult(scanData) {
+                // Validate scan data
+                if (!scanData || typeof scanData !== 'string' || scanData.trim() === '') {
+                    console.log('Invalid scan data:', scanData);
+                    return;
+                }
 
-                // Dừng quét ngay lập tức
+                const cleanData = scanData.trim();
+                console.log('Processing scan result:', cleanData);
+
+                // Dừng quét ngay lập tức để tránh quét trùng
                 this.stopScanning();
 
                 try {
-                    this.updateStatus('🔍 Đang tra cứu sản phẩm...', 'info');
+                    this.updateStatus('🔍 Đang xử lý mã quét...', 'info');
 
                     // Tìm tên sản phẩm từ database
-                    let productName = this.productDatabase[barcodeData];
+                    let productName = this.productDatabase[cleanData];
                     
-                    // Nếu không tìm thấy, cho phép người dùng nhập tên sản phẩm
+                    // Nếu không tìm thấy trong database
                     if (!productName) {
-                        productName = prompt(`Không tìm thấy sản phẩm có mã ${barcodeData}.\nVui lòng nhập tên sản phẩm:`);
-                        if (!productName || productName.trim() === '') {
-                            this.updateStatus('❌ Đã hủy thêm sản phẩm', 'error');
-                            return;
+                        // Kiểm tra xem có phải mã QR chứa thông tin JSON không
+                        try {
+                            const jsonData = JSON.parse(cleanData);
+                            if (jsonData.name || jsonData.productName) {
+                                productName = jsonData.name || jsonData.productName;
+                            }
+                        } catch (e) {
+                            // Không phải JSON, tiếp tục
                         }
-                        // Lưu vào database tạm thời
-                        this.productDatabase[barcodeData] = productName.trim();
+                        
+                        // Nếu vẫn không có, yêu cầu người dùng nhập
+                        if (!productName) {
+                            productName = prompt(`Mã: ${cleanData}\n\nKhông tìm thấy trong database.\nVui lòng nhập tên sản phẩm:`);
+                            if (!productName || productName.trim() === '') {
+                                this.updateStatus('❌ Đã hủy thêm sản phẩm', 'error');
+                                return;
+                            }
+                            productName = productName.trim();
+                            // Lưu vào database tạm thời
+                            this.productDatabase[cleanData] = productName;
+                            console.log('Added new product to database:', cleanData, productName);
+                        }
                     }
 
-                    this.updateStatus('📦 Đang thêm vào thống kê...', 'info');
+                    this.updateStatus('💾 Đang lưu vào database...', 'info');
                     
-                    // Thêm mỗi lần quét như một record mới vào collection orders
+                    // Thêm vào Firebase
                     const { collection, addDoc } = window.firestoreFunctions;
-                    const newOrder = {
-                        barcode: barcodeData,
+                    const newRecord = {
+                        barcode: cleanData,
                         productName: productName,
                         scannedAt: new Date().toLocaleString('vi-VN'),
                         createdAt: new Date(),
-                        userId: 'anonymous'
+                        userId: 'anonymous',
+                        scanType: this.detectScanType(cleanData) // Detect if QR or barcode
                     };
 
-                    await addDoc(collection(window.db, 'orders'), newOrder);
+                    console.log('Saving to Firebase:', newRecord);
+                    await addDoc(collection(window.db, 'orders'), newRecord);
                     
-                    // Chuyển về trang đầu tiên để thấy cập nhật
+                    // Chuyển về trang đầu tiên
                     this.currentPage = 1;
                     
                     this.updateStatus(`✅ Đã thêm: ${productName}`, 'success');
 
+                    // Auto hide success message after 3 seconds
+                    setTimeout(() => {
+                        if (this.statusDiv.textContent.includes('Đã thêm:')) {
+                            this.updateStatus('Sẵn sàng quét mã tiếp theo', 'info');
+                        }
+                    }, 3000);
+
                 } catch (error) {
-                    console.error('Error processing barcode:', error);
-                    this.updateStatus('❌ Lỗi khi xử lý barcode. Vui lòng thử lại.', 'error');
+                    console.error('Error processing scan result:', error);
+                    this.updateStatus(`❌ Lỗi xử lý: ${error.message}`, 'error');
+                }
+            }
+
+            detectScanType(data) {
+                // Detect if it's likely a barcode or QR code based on characteristics
+                if (data.length >= 8 && data.length <= 18 && /^\d+$/.test(data)) {
+                    return 'barcode';
+                } else if (data.startsWith('http') || data.includes('{') || data.includes(',')) {
+                    return 'qrcode';
+                } else {
+                    return 'unknown';
                 }
             }
 
